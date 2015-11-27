@@ -11,9 +11,9 @@ from secfs.store.tree import Directory
 from cryptography.fernet import Fernet
 from secfs.types import I, Principal, User, Group
 
-# usermap contains a map from user ID to their public key according to /.users
+# usermap contains a map from a User object to their public key according to /.users
 usermap = {}
-# groupmap contains a map from group ID to the list of members according to /.groups
+# groupmap contains a map from a Group object to the list of members according to /.groups
 groupmap = {}
 # owner is the user principal that owns the current share
 owner = None
@@ -119,16 +119,33 @@ def _create(parent_i, name, create_as, create_for, isdir):
     #
     # Here, you will need to:
     #
-    #  - store the newly created inode (node.bytes()) on the server
-    #  - map that block to an i owned by the user
-    #  - if a directory is being created, create entries for . and ..
-    #  - if create_for is a group, you will also have to create a group i for
-    #    that group, and point it to the user's i
-    #  - call link() to link the new i into the directory at parent_i with the
+    #  - [DONE] store the newly created inode (node.bytes()) on the server
+    #  - [DONE] map that block to an i owned by the user
+    #  - [DONE] if a directory is being created, create entries for . and ..
+    #  - [MAYBE?] if create_for is a group, you will
+    #    also have to create a group i for that group, and point it to the user's i
+    #  - [DONE] call link() to link the new i into the directory at parent_i with the
     #    given name
     #
     # Also make sure that you *return the final i* for the new inode!
-    return I(User(0), 0)
+
+    # TODO: Update user and group i-handles (later on?)
+    # TODO: Anything special needed for group functionality or do the function calls
+    #       with I(create_for) take care of everything?
+    # TODO: Do I need to allocate this an empty file with secfs.store.block.store('')?
+
+    new_ihash = secfs.store.block.store(node.bytes())
+    # FIXME: Using I(create_for) here should automatically take care of group indirection, no?
+    new_i = secfs.tables.modmap(create_as, I(create_for), new_ihash)
+
+    if isdir:
+      # link calls tree.add and modmap within
+      link(create_as, new_i, new_i, b'.')
+      link(create_as, parent_i, new_i, b'..')
+
+    # Finally link this directory to the parent
+    link(create_as, new_i, parent_i, name)
+    return new_i
 
 def create(parent_i, name, create_as, create_for):
     """

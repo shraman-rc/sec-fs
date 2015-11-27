@@ -13,7 +13,7 @@ class Inode:
 
     def load(ihash):
         """
-        Loads all meta information about an inode given its ihandle.
+        Loads all meta information about an inode given its ihash.
         """
         d = secfs.store.block.load(ihash)
         if d == None:

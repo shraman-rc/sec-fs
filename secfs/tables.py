@@ -60,7 +60,7 @@ class Itable:
 def resolve(i, resolve_groups = True):
     """
     Resolve the given i into an inode hash. If resolve_groups is not set, group
-    is will only be resolved to their user i, but not further.
+    i's will only be resolved to their user i, but not further.
 
     In particular, for some i = (principal, inumber), we first find the itable
     for the principal, and then find the inumber-th element of that table. If
@@ -125,6 +125,7 @@ def modmap(mod_as, i, ihash):
 
     assert mod_as.is_user() # only real users can mod
 
+    # Group i-table modification
     if mod_as != i.p:
         print("trying to mod object for {} through {}".format(i.p, mod_as))
         assert i.p.is_group() # if not for self, then must be for group
