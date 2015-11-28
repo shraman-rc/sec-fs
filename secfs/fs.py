@@ -115,8 +115,6 @@ def _create(parent_i, name, create_as, create_for, isdir):
     node.kind = 0 if isdir else 1
     node.ex = isdir
 
-    # FIXME
-    #
     # Here, you will need to:
     #
     #  - [DONE] store the newly created inode (node.bytes()) on the server
@@ -130,12 +128,10 @@ def _create(parent_i, name, create_as, create_for, isdir):
     # Also make sure that you *return the final i* for the new inode!
 
     # TODO: Update user and group i-handles (later on?)
-    # TODO: Anything special needed for group functionality or do the function calls
-    #       with I(create_for) take care of everything?
-    # TODO: Do I need to allocate this an empty file with secfs.store.block.store('')?
+    # TODO: Should I allocate this an empty file with secfs.store.block.store('')?
+    # TODO: Using I(create_for) here should automatically take care of group indirection, no?
 
     new_ihash = secfs.store.block.store(node.bytes())
-    # FIXME: Using I(create_for) here should automatically take care of group indirection, no?
     new_i = secfs.tables.modmap(create_as, I(create_for), new_ihash)
 
     if isdir:
