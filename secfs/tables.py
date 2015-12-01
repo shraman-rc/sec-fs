@@ -23,12 +23,38 @@ def register(_server):
     global server
     server = _server
 
-def update_vsl():
+def validate_vsl(new_vsl):
+    global current_vsl
+
+    # Step 1: Ensure fork-consistency by making sure
+    # the previous VSL is a prefix of the new one
+    for i, vs in enumerate(current_vsl):
+        if new_vsl[i] != vs:
+            # Prefixes don't match, the last change from this client was not
+            # properly registered
+            return False
+
+    # Step 2: Ensure that valid users have made changes
+    # to the VSL by checking signatures on new changes
+    for i in range(len(current_vsl), len(new_vsl)):
+        # TODO(Conner): Signature verification using crypto.py
+        pass
+
+    # Passed all tests
+    return True
+
+def upload_vsl():
     global server, current_vsl
     serialized_vsl = pickle.dumps(current_vsl)
     server.upload_vsl(serialized_vsl)
 
 def download_vsl():
+    '''
+    Downloads and validates the VSL.
+    Updates global data structures.
+
+    returns: True on successful validation, False otherwise
+    '''
     global server
     vsl_blob = server.download_vsl()
 
@@ -37,11 +63,15 @@ def download_vsl():
     serialized_vsl = base64.b64decode(vsl_blob)
 
     # Populate global VSL
-    global current_vsl
-    current_vsl = pickle.loads(serialized_vsl)
+    new_vsl = pickle.loads(serialized_vsl)
 
-def sort_vsl():
+    # Validate
+    if not validate_vsl(new_vsl):
+        return False
+
     global current_vsl
+    current_vsl = new_vsl
+    return True
 
 def populate_itables():
     global current_vsl
@@ -50,8 +80,6 @@ def populate_itables():
     for vs in current_vsl:
         uid, ihandle, ghandle_map, vvector, sig = vs
         current_itables[User(uid)] = retrieve_itable(ihandle)
-
-
 
     # Now do the same for the group i-handles
 
