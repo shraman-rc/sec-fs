@@ -7,15 +7,22 @@
 import pickle
 import secfs.store
 import secfs.fs
+import pdb
 from secfs.types import I, Principal, User, Group
 
-# TODO: The version structure list is just a list of tuples in the form:
+# The version structure list is just a list of tuples in the form:
 #   - (uid, i-handle, group-list, version-vector, signature)
 #       - the "group-list" is a map from gid's to ihandles
 #       - the "version-vector" is a map from uid/gid's to versions
 current_vsl = []
-# current_itables represents the current view of the file system's itables
+old_vsl_length = 0
+# current_itables represents the current snapshot of the file system
+#   - maps Principal instances -> itables
 current_itables = {}
+old_itables = {}
+
+# TODO: Remove
+f = open("custom_output.out", "w")
 
 # a server connection handle is passed to us at mount time by secfs-fuse
 server = None
@@ -24,7 +31,13 @@ def register(_server):
     server = _server
 
 def validate_vsl(new_vsl):
+    '''
+    returns: True if the new VSL is consistent, False otherwise
+    '''
     global current_vsl
+
+    if len(current_vsl) == 0:
+        return True
 
     # Step 1: Ensure fork-consistency by making sure
     # the previous VSL is a prefix of the new one
@@ -34,11 +47,21 @@ def validate_vsl(new_vsl):
             # properly registered
             return False
 
-    # Step 2: Ensure that valid users have made changes
-    # to the VSL by checking signatures on new changes
+    # Step 2: Validate new changes:
+    #   - Make sure they are totally ordered
+    #   - Verify the signatures
+    #   - Verify that the users had permission to sign those changes
+    prev_vv = current_vsl[-1][3]
     for i in range(len(current_vsl), len(new_vsl)):
+        # Sorted order check
+        new_vv = new_vsl[i][3]
+        for ugid in prev_vv:
+            if prev_vv[ugid] > new_vv[ugid]:
+                return False
         # TODO(Conner): Signature verification using crypto.py
         pass
+
+    # Step 3: Check integrity of data blocks in the users itable?
 
     # Passed all tests
     return True
@@ -59,30 +82,42 @@ def download_vsl():
     vsl_blob = server.download_vsl()
 
     # the RPC layer will base64 encode binary data
-    import base64
-    serialized_vsl = base64.b64decode(vsl_blob)
+    if "data" in vsl_blob:
+        import base64
+        serialized_vsl = base64.b64decode(vsl_blob["data"])
+    else:
+        raise Exception("failed to download vsl: no 'data' attribute in RPC blob")
 
-    # Populate global VSL
+    # Validate the newly downloaded VSL
     new_vsl = pickle.loads(serialized_vsl)
-
-    # Validate
     if not validate_vsl(new_vsl):
         return False
 
-    global current_vsl
+    # Populate the global VSL with updated info
+    global current_vsl, old_vsl_length
+    old_vsl_length = len(current_vsl)
     current_vsl = new_vsl
     return True
 
-def populate_itables():
-    global current_vsl
-    ghandle_mappings = {}
-    # Use the user's i-handle to populate the relevant i-tables
-    for vs in current_vsl:
-        uid, ihandle, ghandle_map, vvector, sig = vs
-        current_itables[User(uid)] = retrieve_itable(ihandle)
+def update_itables():
+    global current_vsl, old_vsl_length, current_itables, old_itables
+    new_user_ihandles = {}
+    new_group_ihandles = {}
 
-    # Now do the same for the group i-handles
+    # Iterate only through the new VS's
+    for vs in current_vsl[old_vsl_length:]:
+        uid, ihandle, gihandle_map, vvector, sig = vs
+        new_user_ihandles[uid] = ihandle
+        new_group_ihandles.update(gihandle_map)
 
+    # Save a copy of the itables so we know which updates we should push to the server
+    old_itables = dict(current_itables)
+
+    # Now update the global itable reference to be used
+    for uid in new_user_ihandles:
+        current_itables[User(uid)] = Itable.load(new_user_ihandles[uid])
+    for gid in new_group_ihandles:
+        current_itables[Group(gid)] = Itable.load(new_group_ihandles[gid])
 
 def pre(refresh, user):
     """
@@ -90,21 +125,55 @@ def pre(refresh, user):
     an exclusive server lock.
     """
 
+    f.write("User {} acquiring lock.\n".format(user))
+
     if refresh != None:
         # refresh usermap and groupmap
         refresh()
 
     # Pull the VSL and initialize I-Tables
-    download_vsl()
-    populate_itables()
+    if download_vsl():
+        update_itables()
+    else: # Failed validation TODO: How to handle this?
+        raise Exception("Failed validation")
 
-def post(push_vs):
+def post(push_vs, user):
     if not push_vs:
         # when creating a root, we should not push a VS (yet)
         # you will probably want to leave this here and
         # put your post() code instead of "pass" below.
         return
-    # Store the VSL
+
+    global current_vsl, current_itables, old_itables
+    # Gather which group itables have been updated
+    new_gitables_map = {}
+    for p in current_itables:
+        if p.is_group() and (old_itables.get(p) == None or old_itables[p] != current_itables[p]):
+            new_gitables_map[p.id] = current_itables[p]
+
+    # Get the latest version vector
+    new_vvector = {} if (len(current_vsl) == 0) else dict(current_vsl[-1][3])
+    # Update user version
+    new_vvector[user.id] = new_vvector.get(user.id, 0) + 1
+    # Store user's itable and upload if it doesnt exist
+    new_ihandle = secfs.store.block.store(current_itables.get(user, Itable()).bytes())
+    # Do the same updates for groups
+    new_gihandles_map = {}
+    for gid in new_gitables_map:
+        # Update the group version
+        new_vvector[gid] = new_vvector.get(gid, 0) + 1
+        # Store the new itable and save the hash
+        itable = new_gitables_map[gid]
+        new_gihandles_map[gid] = secfs.store.block.store(itable.bytes())
+
+    # Create the new VS and update on the server
+    signature = None # TODO: Conner?
+    new_vs = (user.id, new_ihandle, new_gihandles_map, new_vvector, signature)
+    current_vsl.append(new_vs)
+    upload_vsl()
+
+    # Reset the current user after operation complete
+    f.write("User {} about to release lock.\n".format(user))
 
 
 class Itable:
