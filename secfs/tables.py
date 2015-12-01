@@ -14,6 +14,7 @@ from secfs.types import I, Principal, User, Group
 #   - (uid, i-handle, group-list, version-vector, signature)
 #       - the "group-list" is a map from gid's to ihandles
 #       - the "version-vector" is a map from uid/gid's to versions
+#       - the "signature" the signed vsl
 current_vsl = []
 # current_itables represents the current view of the file system's itables
 current_itables = {}
@@ -39,13 +40,14 @@ def validate_vsl(new_vsl):
     # to the VSL by checking signatures on new changes
     for i in range(len(current_vsl), len(new_vsl)):
         # TODO(Conner): Signature verification using crypto.py
-        (uid, _, _, _, sig) = new_vsl
+        (uid, ihandle, glist, vv, sig) = new_vsl
+        data = (uid, ihandle, glist, vv)
         # Do we have the public key
         if uid not in usermap:
           return False
         key =  usermap[uid]
         # Verify signature
-        if not crypto.verify(sig, key, repr(new_vsl)):
+        if not crypto.verify(sig, key, repr(data)):
             return False
         
     # Passed all tests
@@ -113,6 +115,12 @@ def post(push_vs):
         # put your post() code instead of "pass" below.
         return
     # Store the VSL
+
+    # Add signature
+    sig = crypto.sign(repr(push_vs))
+    (uid, ihandle, glist, vv) = push_vs
+    push_vs = (uid, ihandle, glist, vv, sig)
+
 
 
 class Itable:
