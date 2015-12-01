@@ -2,6 +2,7 @@
 
 import threading
 seq_lock = threading.Lock()
+VSL_KEY = "VSL"
 
 class SecFSRPC():
     def __init__(self):
@@ -14,6 +15,13 @@ class SecFSRPC():
                 # chash => block
         }
 
+    def download_vsl(self):
+        return self.blocks[VSL_KEY]
+
+    def upload_vsl(self, vsl):
+        import base64
+        vsl_blob = base64.b64decode(vsl)
+        self.blocks[VSL_KEY] = vsl_blob
 
     def lock(self):
         # global client lock

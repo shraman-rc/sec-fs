@@ -9,6 +9,11 @@ import secfs.store
 import secfs.fs
 from secfs.types import I, Principal, User, Group
 
+# TODO: The version structure list is just a list of tuples in the form:
+#   - (uid, i-handle, group-list, version-vector, signature)
+#       - the "group-list" is a map from gid's to ihandles
+#       - the "version-vector" is a map from uid/gid's to versions
+current_vsl = []
 # current_itables represents the current view of the file system's itables
 current_itables = {}
 
@@ -17,6 +22,39 @@ server = None
 def register(_server):
     global server
     server = _server
+
+def update_vsl():
+    global server, current_vsl
+    serialized_vsl = pickle.dumps(current_vsl)
+    server.upload_vsl(serialized_vsl)
+
+def download_vsl():
+    global server
+    vsl_blob = server.download_vsl()
+
+    # the RPC layer will base64 encode binary data
+    import base64
+    serialized_vsl = base64.b64decode(vsl_blob)
+
+    # Populate global VSL
+    global current_vsl
+    current_vsl = pickle.loads(serialized_vsl)
+
+def sort_vsl():
+    global current_vsl
+
+def populate_itables():
+    global current_vsl
+    ghandle_mappings = {}
+    # Use the user's i-handle to populate the relevant i-tables
+    for vs in current_vsl:
+        uid, ihandle, ghandle_map, vvector, sig = vs
+        current_itables[User(uid)] = retrieve_itable(ihandle)
+
+
+
+    # Now do the same for the group i-handles
+
 
 def pre(refresh, user):
     """
@@ -28,13 +66,18 @@ def pre(refresh, user):
         # refresh usermap and groupmap
         refresh()
 
+    # Pull the VSL and initialize I-Tables
+    download_vsl()
+    populate_itables()
+
 def post(push_vs):
     if not push_vs:
         # when creating a root, we should not push a VS (yet)
         # you will probably want to leave this here and
         # put your post() code instead of "pass" below.
         return
-    pass
+    # Store the VSL
+
 
 class Itable:
     """
