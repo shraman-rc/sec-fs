@@ -5,8 +5,9 @@
 # principal's mapping from inumbers (the second part of an i) to inode hashes.
 
 import pickle
-import secfs.store
+import secfs.crypto
 import secfs.fs
+import secfs.store
 from secfs.types import I, Principal, User, Group
 
 # TODO: The version structure list is just a list of tuples in the form:
@@ -38,8 +39,15 @@ def validate_vsl(new_vsl):
     # to the VSL by checking signatures on new changes
     for i in range(len(current_vsl), len(new_vsl)):
         # TODO(Conner): Signature verification using crypto.py
-        pass
-
+        (uid, _, _, _, sig) = new_vsl
+        # Do we have the public key
+        if uid not in usermap:
+          return False
+        key =  usermap[uid]
+        # Verify signature
+        if not crypto.verify(sig, key, repr(new_vsl)):
+            return False
+        
     # Passed all tests
     return True
 

@@ -39,6 +39,47 @@ def encrypt_sym(key, data):
     f = Fernet(key)
     return f.encrypt(data)
 
+def sign(key, data):
+    """
+    Signs the given data with the secret key.
+    """
+    # build signer
+    signer = private_key.signer(
+      padding.PSS(
+        mgf=padding.MGF1(hashes.SHA256()),
+        salt_length=padding.PSS.MAX_LENGTH
+      ),
+      hashes.SHA256()
+    )
+    # load data
+    signer.update(data)
+    # compute signature
+    signature = signer.finalize()
+
+    return signature
+
+def verify(sig, key, data):
+  # build verifier
+  verifier = key.verifier(
+    sig,
+    padding.PSS(
+      mgf=padding.MGF(hashes.SHA256()),
+      salt_length=padding.PSS.MAX_LENGTH
+    ),
+    hashes.SHA256()
+  )
+  # add message
+  verifier.update(data)
+  # check signature
+  try:
+    verifier.verify()
+  except InvalidSignature:
+    return False
+  
+  return True
+
+  
+
 def generate_key(user):
     """
     Ensure that a private/public keypair exists in user-$uid-key.pem for the
