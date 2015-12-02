@@ -155,6 +155,7 @@ def mkdir(parent_i, name, create_as, create_for):
     Create a new directory.
     See secfs.fs._create
     """
+    print("Current ITables: {}".format(secfs.tables.current_itables))
     return _create(parent_i, name, create_as, create_for, True)
 
 def read(read_as, i, off, size):
