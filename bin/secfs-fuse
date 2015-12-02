@@ -385,9 +385,17 @@ class SecFS(llfuse.Operations):
         if (ctx.umask & 0o004) != 0:
             # user masked world-readable, so encrypting file
             encrypt = True
+        print("Umask", bin(ctx.umask))
+        print("Encrypting inode?", encrypt)
 
         try:
-            i = secfs.fs.mkdir(inodes[parent_inode], name, User(ctx.uid), who)
+            i = secfs.fs.mkdir(
+              inodes[parent_inode], 
+              name, 
+              User(ctx.uid), 
+              who,
+              encrypt
+            )
             return self._post_and_getattr(i)
         except PermissionError as e:
             print("Illegal access:", e)
@@ -414,9 +422,17 @@ class SecFS(llfuse.Operations):
         if (ctx.umask & 0o004) != 0:
             # user masked world-readable, so encrypting file
             encrypt = True
+        print("Umask", bin(ctx.umask))
+        print("Encrypting inode?", encrypt)
 
         try:
-            i = secfs.fs.create(inodes[parent_inode], name, User(ctx.uid), who)
+            i = secfs.fs.create(
+              inodes[parent_inode], 
+              name, 
+              User(ctx.uid), 
+              who, 
+              encrypt
+            )
             ret = (new_fh(i, ctx.uid), _getattr(i))
             self._post()
             return ret
@@ -588,6 +604,8 @@ def _getattr(i):
     entry.st_atime = 0
     entry.st_rdev = 0
 
+    print("I:", str(i))
+
     # Mode gets complicated
     # if isn't needed, only here to make code easier to visually parse
     if True:
@@ -598,11 +616,15 @@ def _getattr(i):
         else:
             entry.st_mode |= stat.S_IFREG
 
+        entry.st_mode |= stat.S_IRUSR | stat.S_IRGRP
         # Is it encrypted (i.e. limited read access)?
-        entry.st_mode |= stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
+        print("Encrypted inode?", n.enc)
+        if not n.enc:
+            entry.st_mode |= stat.S_IROTH
 
         # Who can write (i.e. owned by group or user)?
         if i.p.is_group():
+            print("Owned by group")
             # owned by group
             entry.st_mode |= stat.S_IWGRP
             entry.st_gid = i.p.id
@@ -611,18 +633,25 @@ def _getattr(i):
             real_i = secfs.tables.resolve(i, False)
             entry.st_uid = real_i.p.id
         else:
-            entry.st_mode |= stat.S_IWUSR
+            print("Owned by user, p.id:", i.p.id)
+            if n.uwrite:
+                entry.st_mode |= stat.S_IWUSR
             entry.st_uid = i.p.id
             entry.st_gid = 0
 
         # Who can execute? Those who can read if node.ex is True
         if n.ex:
+            print("Not executable")
             if entry.st_mode & stat.S_IRUSR:
                 entry.st_mode |= stat.S_IXUSR
             if entry.st_mode & stat.S_IRGRP:
                 entry.st_mode |= stat.S_IXGRP
             if entry.st_mode & stat.S_IROTH:
                 entry.st_mode |= stat.S_IXOTH
+
+    print("Mode:", bin(entry.st_mode))
+    print("UID:", entry.st_uid)
+    print("GID:", entry.st_gid)
 
     return entry
 

@@ -4,6 +4,9 @@ venv
 mnt
 *.pem
 *.pub
+*.err
+*.log
+*.sw*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
