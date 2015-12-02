@@ -25,12 +25,11 @@ def register_keyfile(user, f):
             backend=default_backend()
         )
 
-def decrypt_sym(key, data):
+def generate_sym_key():
     """
-    Decrypt the given data with the given key.
+    Generates a new symmetric key.
     """
-    f = Fernet(key)
-    return f.decrypt(data)
+    return Fernet.generate_key()
 
 def encrypt_sym(key, data):
     """
@@ -38,6 +37,13 @@ def encrypt_sym(key, data):
     """
     f = Fernet(key)
     return f.encrypt(data)
+
+def decrypt_sym(key, data):
+    """
+    Decrypt the given data with the given key.
+    """
+    f = Fernet(key)
+    return f.decrypt(data)
 
 def sign(private_key, data):
     """
@@ -57,24 +63,27 @@ def sign(private_key, data):
     return signer.finalize()
 
 def verify(sig, public_key, data):
-  # build verifier
-  verifier = public_key.verifier(
-    sig,
-    padding.PSS(
-      mgf=padding.MGF1(hashes.SHA256()),
-      salt_length=padding.PSS.MAX_LENGTH
-    ),
-    hashes.SHA256()
-  )
-  # add message
-  verifier.update(data)
-  # check signature
-  try:
-    verifier.verify()
-  except cryptography.exceptions.InvalidSignature:
-    return False
+    """
+    Verifies that signature signs the given data under the provided public key.
+    """
+    # build verifier
+    verifier = public_key.verifier(
+        sig,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+    # add message
+    verifier.update(data)
+    # check signature
+    try:
+        verifier.verify()
+    except cryptography.exceptions.InvalidSignature:
+        return False
   
-  return True
+    return True
 
 def generate_key(user):
     """
