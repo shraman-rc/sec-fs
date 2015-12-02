@@ -7,7 +7,8 @@ class Inode:
         self.size = 0
         self.kind = 0        # 0 is dir, 1 is file
         self.ex = False
-        self.uwrite = True   # User write
+        self.uwrite = True   # User writeable
+        self.gread = True    # Group readable
         self.enc = False     # World readable
         self.ctime = 0
         self.mtime = 0

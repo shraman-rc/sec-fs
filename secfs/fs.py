@@ -82,7 +82,7 @@ def init(owner, users, groups):
 
     return root_i
 
-def _create(parent_i, name, create_as, create_for, isdir, encrypt):
+def _create(parent_i, name, create_as, create_for, isdir, gread, encrypt):
     """
     _create allocates a new file, and links it into the directory at parent_i
     with the given name. The new file is owned by create_for, but is created
@@ -115,7 +115,13 @@ def _create(parent_i, name, create_as, create_for, isdir, encrypt):
     node.kind = 0 if isdir else 1
     node.ex = isdir
     node.uwrite = create_as == create_for
+    node.gread = gread
     node.enc = encrypt
+
+    #if encrypt:
+        #sym_key = secfs.crypto.generate_sym_key()
+        #group_key = secfs.fs.groupmap[create_as]
+        #sym_key_enc = secfs.crypto.encrypt(group_key, sym_key)
 
     print("Inode:", node.bytes())
 
@@ -147,19 +153,19 @@ def _create(parent_i, name, create_as, create_for, isdir, encrypt):
     link(create_as, new_i, parent_i, name)
     return new_i
 
-def create(parent_i, name, create_as, create_for, encrypt):
+def create(parent_i, name, create_as, create_for, gread, encrypt):
     """
     Create a new file.
     See secfs.fs._create
     """
-    return _create(parent_i, name, create_as, create_for, False, encrypt)
+    return _create(parent_i, name, create_as, create_for, False, gread,encrypt)
 
 def mkdir(parent_i, name, create_as, create_for, encrypt):
     """
     Create a new directory.
     See secfs.fs._create
     """
-    return _create(parent_i, name, create_as, create_for, True, encrypt)
+    return _create(parent_i, name, create_as, create_for, True, True, encrypt)
 
 def read(read_as, i, off, size):
     """

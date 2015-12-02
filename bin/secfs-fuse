@@ -418,11 +418,18 @@ class SecFS(llfuse.Operations):
             # user gave up write permission, so donating to group
             who = Group(ctx.gid)
 
+        
         encrypt = False
+        gread = True
         if (ctx.umask & 0o004) != 0:
-            # user masked world-readable, so encrypting file
-            encrypt = True
-        print("Umask", bin(ctx.umask))
+              # user masked world-readable, so encrypting file
+              encrypt = True
+              if isinstance(who, User):
+                  gread = False
+        print("Mode:", bin(mode))
+        print("Flags:", bin(flags))
+        print("Umask:", bin(ctx.umask))
+        print("GRead:", gread)
         print("Encrypting inode?", encrypt)
 
         try:
@@ -431,6 +438,7 @@ class SecFS(llfuse.Operations):
               name, 
               User(ctx.uid), 
               who, 
+              gread,
               encrypt
             )
             ret = (new_fh(i, ctx.uid), _getattr(i))
@@ -616,7 +624,11 @@ def _getattr(i):
         else:
             entry.st_mode |= stat.S_IFREG
 
-        entry.st_mode |= stat.S_IRUSR | stat.S_IRGRP
+        entry.st_mode |= stat.S_IRUSR 
+        
+        if n.gread:
+            entry.st_mode |= stat.S_IRGRP
+
         # Is it encrypted (i.e. limited read access)?
         print("Encrypted inode?", n.enc)
         if not n.enc:

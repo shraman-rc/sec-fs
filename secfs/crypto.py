@@ -25,12 +25,11 @@ def register_keyfile(user, f):
             backend=default_backend()
         )
 
-def decrypt_sym(key, data):
+def generate_sym_key():
     """
-    Decrypt the given data with the given key.
+    Generates a new symmetric key.
     """
-    f = Fernet(key)
-    return f.decrypt(data)
+    return Fernet.generate_key()
 
 def encrypt_sym(key, data):
     """
@@ -38,6 +37,13 @@ def encrypt_sym(key, data):
     """
     f = Fernet(key)
     return f.encrypt(data)
+
+def decrypt_sym(key, data):
+    """
+    Decrypt the given data with the given key.
+    """
+    f = Fernet(key)
+    return f.decrypt(data)
 
 def generate_key(user):
     """
