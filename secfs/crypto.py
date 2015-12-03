@@ -6,6 +6,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.fernet import Fernet
+from cryptography.exceptions import InvalidSignature
 from secfs.types import I, Principal, User, Group
 
 keys = {}
@@ -80,7 +81,7 @@ def verify(sig, public_key, data):
     # check signature
     try:
         verifier.verify()
-    except cryptography.exceptions.InvalidSignature:
+    except InvalidSignature:
         return False
   
     return True

@@ -403,7 +403,7 @@ class SecFS(llfuse.Operations):
               who,
               encrypt
             )
-            return self._post_and_getattr(i)
+            return self._post_and_getattr(i, user=user)
         except PermissionError as e:
             print("Illegal access:", e)
             self._post(user=user)
