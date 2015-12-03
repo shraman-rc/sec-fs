@@ -394,7 +394,7 @@ class SecFS(llfuse.Operations):
             encrypt = True
 
         try:
-            i = secfs.fs.mkdir(inodes[parent_inode], name, User(ctx.uid), who)
+            i = secfs.fs.mkdir(inodes[parent_inode], name, User(ctx.uid), who, encrypt)
             return self._post_and_getattr(i, user=user)
         except PermissionError as e:
             print("Illegal access:", e)
@@ -424,7 +424,7 @@ class SecFS(llfuse.Operations):
             encrypt = True
 
         try:
-            i = secfs.fs.create(inodes[parent_inode], name, User(ctx.uid), who)
+            i = secfs.fs.create(inodes[parent_inode], name, User(ctx.uid), who, encrypt)
             ret = (new_fh(i, ctx.uid), _getattr(i))
             self._post(user=user)
             return ret
