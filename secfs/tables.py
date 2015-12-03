@@ -22,7 +22,7 @@ current_itables = {}
 old_itables = {}
 
 # TODO: Remove
-f = open("custom_output.out", "w")
+f = open("custom_output.txt", "w")
 
 # a server connection handle is passed to us at mount time by secfs-fuse
 server = None
@@ -67,6 +67,7 @@ def validate_vsl(new_vsl):
     return True
 
 def upload_vsl():
+    f.write("[INFO]: Uploading VSL.\n")
     global server, current_vsl
     serialized_vsl = pickle.dumps(current_vsl)
     server.upload_vsl(serialized_vsl)
@@ -78,6 +79,8 @@ def download_vsl():
 
     returns: True on successful validation, False otherwise
     '''
+    f.write("[INFO]: Downloading VSL.\n")
+
     global server
     vsl_blob = server.download_vsl()
 
@@ -86,11 +89,14 @@ def download_vsl():
         import base64
         serialized_vsl = base64.b64decode(vsl_blob["data"])
     else:
+        f.write("[ERROR]: Failed to download VSL: no 'data' attribute in blob.\n")
         raise Exception("failed to download vsl: no 'data' attribute in RPC blob")
 
     # Validate the newly downloaded VSL
     new_vsl = pickle.loads(serialized_vsl)
+    f.write("[INFO]: Downloaded VSL: {}.\n".format(new_vsl))
     if not validate_vsl(new_vsl):
+        f.write("[ERROR]: VSL Not Valid!\n")
         return False
 
     # Populate the global VSL with updated info
@@ -100,6 +106,7 @@ def download_vsl():
     return True
 
 def update_itables():
+    f.write("[INFO]: Updating i-tables.\n")
     global current_vsl, old_vsl_length, current_itables, old_itables
     new_user_ihandles = {}
     new_group_ihandles = {}
@@ -125,22 +132,39 @@ def pre(refresh, user):
     an exclusive server lock.
     """
 
-    f.write("User {} acquiring lock.\n".format(user))
+    f.write("[INFO]: User {} entering pre().\n".format(user))
 
     # Pull the VSL and initialize I-Tables
     if download_vsl():
         update_itables()
         # refresh user and group map AFTER setting up itables
-        if refresh:
+        if refresh != None:
+            f.write("[INFO]: Calling {}.\n".format(refresh))
             refresh()
     else: # Failed validation TODO: How to handle this?
+        f.write("[ERROR]: Failed validation!\n")
         raise Exception("Failed validation")
+    f.write("[INFO]: User {} exiting pre().\n\n".format(user))
+
+# For debug only: Print current state of tables
+def _generate_itable_string(itable):
+    "\n\t\t".join([str(p) for p in itable.mapping])
+def _generate_itables_string(itables_map):
+    return "\n\t".join(["{}:\n\t\t{}".format(k, _generate_itable_string(v))
+                        for (k,v) in itables_map.items()])
+def fwrite_tables():
+    global old_itables, current_itables
+    f.write("Old i-tables:\n\t{}\n".format(_generate_itables_string(old_itables)))
+    f.write("Current i-tables:\n\t{}\n".format(_generate_itables_string(current_itables)))
 
 def post(push_vs, user):
+    f.write("[INFO]: User {} in post().\n".format(user))
+    # fwrite_tables() TODO: fix
     if not push_vs:
         # when creating a root, we should not push a VS (yet)
         # you will probably want to leave this here and
         # put your post() code instead of "pass" below.
+        f.write("[INFO]: User {} exited post() without pushing VSL.\n".format(user))
         return
 
     global current_vsl, current_itables, old_itables
@@ -168,12 +192,12 @@ def post(push_vs, user):
     # Create the new VS and update on the server
     signature = None # TODO: Conner?
     new_vs = (user.id, new_ihandle, new_gihandles_map, new_vvector, signature)
+    f.write("[INFO]: New VS: {}.\n".format(new_vs))
     current_vsl.append(new_vs)
     upload_vsl()
 
     # Reset the current user after operation complete
-    f.write("User {} about to release lock.\n".format(user))
-
+    f.write("[INFO]: User {} exiting post().\n\n".format(user))
 
 class Itable:
     """
