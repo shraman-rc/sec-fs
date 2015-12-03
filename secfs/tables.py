@@ -10,14 +10,20 @@ import secfs.fs
 import secfs.store
 from secfs.types import I, Principal, User, Group
 
-# TODO: The version structure list is just a list of tuples in the form:
+# The version structure list is just a list of tuples in the form:
 #   - (uid, i-handle, group-list, version-vector, signature)
 #       - the "group-list" is a map from gid's to ihandles
 #       - the "version-vector" is a map from uid/gid's to versions
 #       - the "signature" the signed vsl
 current_vsl = []
-# current_itables represents the current view of the file system's itables
+old_vsl_length = 0
+# current_itables represents the current snapshot of the file system
+#   - maps Principal instances -> itables
 current_itables = {}
+old_itables = {}
+
+# TODO: Remove
+f = open("custom_output.txt", "w")
 
 # a server connection handle is passed to us at mount time by secfs-fuse
 server = None
@@ -26,7 +32,13 @@ def register(_server):
     server = _server
 
 def validate_vsl(new_vsl):
+    '''
+    returns: True if the new VSL is consistent, False otherwise
+    '''
     global current_vsl
+
+    if len(current_vsl) == 0:
+        return True
 
     # Step 1: Ensure fork-consistency by making sure
     # the previous VSL is a prefix of the new one
@@ -36,25 +48,36 @@ def validate_vsl(new_vsl):
             # properly registered
             return False
 
-    # Step 2: Ensure that valid users have made changes
-    # to the VSL by checking signatures on new changes
+    # Step 2: Validate new changes:
+    #   - Make sure they are totally ordered
+    #   - Verify the signatures
+    #   - Verify that the users had permission to sign those changes
+    prev_vv = current_vsl[-1][3]
     for i in range(len(current_vsl), len(new_vsl)):
-        # TODO(Conner): Signature verification using crypto.py
-        (uid, ihandle, glist, vv, sig) = new_vsl
+        (uid, ihandle, glist, new_vv, sig) = new_vsl[i]
+        # Make sure they are totally ordered
+        for ugid in prev_vv:
+            if prev_vv[ugid] > new_vv[ugid]:
+                return False
+        prev_vv = new_vv
+        # Verify the signatures
         data = (uid, ihandle, glist, vv)
-        # Do we have the public key
         user = User(uid)
         if user not in usermap:
-          return False
-        key =  usermap[user]
-        # Verify signature
-        if not crypto.verify(sig, key, repr(data)):
             return False
+        public_key = usermap[user]
+        if not secfs.crypto.verify(sig, public_key, repr(data)):
+            return False
+        # TODO: Verify that the user had permission to sign those changes
         
+    # Step 3: Check integrity of data blocks in the users itable?
+    # TODO: Implement this elsewhere, since its not really a VSL check
+
     # Passed all tests
     return True
 
 def upload_vsl():
+    f.write("[INFO]: Uploading VSL.\n")
     global server, current_vsl
     serialized_vsl = pickle.dumps(current_vsl)
     server.upload_vsl(serialized_vsl)
@@ -66,34 +89,52 @@ def download_vsl():
 
     returns: True on successful validation, False otherwise
     '''
+    f.write("[INFO]: Downloading VSL.\n")
+
     global server
     vsl_blob = server.download_vsl()
 
     # the RPC layer will base64 encode binary data
-    import base64
-    serialized_vsl = base64.b64decode(vsl_blob)
+    if "data" in vsl_blob:
+        import base64
+        serialized_vsl = base64.b64decode(vsl_blob["data"])
+    else:
+        f.write("[ERROR]: Failed to download VSL: no 'data' attribute in blob.\n")
+        raise Exception("failed to download vsl: no 'data' attribute in RPC blob")
 
-    # Populate global VSL
+    # Validate the newly downloaded VSL
     new_vsl = pickle.loads(serialized_vsl)
-
-    # Validate
+    f.write("[INFO]: Downloaded VSL: {}.\n".format(new_vsl))
     if not validate_vsl(new_vsl):
+        f.write("[ERROR]: VSL Not Valid!\n")
         return False
 
-    global current_vsl
+    # Populate the global VSL with updated info
+    global current_vsl, old_vsl_length
+    old_vsl_length = len(current_vsl)
     current_vsl = new_vsl
     return True
 
-def populate_itables():
-    global current_vsl
-    ghandle_mappings = {}
-    # Use the user's i-handle to populate the relevant i-tables
-    for vs in current_vsl:
-        uid, ihandle, ghandle_map, vvector, sig = vs
-        current_itables[User(uid)] = retrieve_itable(ihandle)
+def update_itables():
+    f.write("[INFO]: Updating i-tables.\n")
+    global current_vsl, old_vsl_length, current_itables, old_itables
+    new_user_ihandles = {}
+    new_group_ihandles = {}
 
-    # Now do the same for the group i-handles
+    # Iterate only through the new VS's
+    for vs in current_vsl[old_vsl_length:]:
+        uid, ihandle, gihandle_map, vvector, sig = vs
+        new_user_ihandles[uid] = ihandle
+        new_group_ihandles.update(gihandle_map)
 
+    # Save a copy of the itables so we know which updates we should push to the server
+    old_itables = dict(current_itables)
+
+    # Now update the global itable reference to be used
+    for uid in new_user_ihandles:
+        current_itables[User(uid)] = Itable.load(new_user_ihandles[uid])
+    for gid in new_group_ihandles:
+        current_itables[Group(gid)] = Itable.load(new_group_ihandles[gid])
 
 def pre(refresh, user):
     """
@@ -101,28 +142,74 @@ def pre(refresh, user):
     an exclusive server lock.
     """
 
-    if refresh != None:
-        # refresh usermap and groupmap
-        refresh()
+    f.write("[INFO]: User {} entering pre().\n".format(user))
 
     # Pull the VSL and initialize I-Tables
-    download_vsl()
-    populate_itables()
+    if download_vsl():
+        update_itables()
+        # refresh user and group map AFTER setting up itables
+        if refresh != None:
+            f.write("[INFO]: Calling {}.\n".format(refresh))
+            refresh()
+    else: # Failed validation TODO: How to handle this?
+        f.write("[ERROR]: Failed validation!\n")
+        raise Exception("Failed validation")
+    f.write("[INFO]: User {} exiting pre().\n\n".format(user))
 
-def post(push_vs):
+# For debug only: Print current state of tables
+#def _generate_itable_string(itable):
+#    "\n\t\t".join([str(p) for p in itable.mapping])
+#def _generate_itables_string(itables_map):
+#    return "\n\t".join(["{}:\n\t\t{}".format(k, _generate_itable_string(v))
+#                        for (k,v) in itables_map.items()])
+#def fwrite_tables():
+#    global old_itables, current_itables
+#    f.write("Old i-tables:\n\t{}\n".format(_generate_itables_string(old_itables)))
+#    f.write("Current i-tables:\n\t{}\n".format(_generate_itables_string(current_itables)))
+
+def post(push_vs, user):
+    f.write("[INFO]: User {} in post().\n".format(user))
+    # fwrite_tables()
     if not push_vs:
         # when creating a root, we should not push a VS (yet)
         # you will probably want to leave this here and
         # put your post() code instead of "pass" below.
+        f.write("[INFO]: User {} exited post() without pushing VSL.\n".format(user))
         return
-    # Store the VSL
+
+    global current_vsl, current_itables, old_itables
+    # Gather which group itables have been updated
+    new_gitables_map = {}
+    for p in current_itables:
+        if p.is_group() and (old_itables.get(p) == None or old_itables[p] != current_itables[p]):
+            new_gitables_map[p.id] = current_itables[p]
+
+    # Get the latest version vector
+    new_vvector = {} if (len(current_vsl) == 0) else dict(current_vsl[-1][3])
+    # Update user version
+    new_vvector[user.id] = new_vvector.get(user.id, 0) + 1
+    # Store user's itable and upload if it doesnt exist
+    new_ihandle = secfs.store.block.store(current_itables.get(user, Itable()).bytes())
+    # Do the same updates for groups
+    new_gihandles_map = {}
+    for gid in new_gitables_map:
+        # Update the group version
+        new_vvector[gid] = new_vvector.get(gid, 0) + 1
+        # Store the new itable and save the hash
+        itable = new_gitables_map[gid]
+        new_gihandles_map[gid] = secfs.store.block.store(itable.bytes())
 
     # Add signature
-    sig = crypto.sign(repr(push_vs))
-    (uid, ihandle, glist, vv) = push_vs
-    push_vs = (uid, ihandle, glist, vv, sig)
+    data = (user.id, new_ihandle, new_gihandles_map, new_vvector)
+    sig = secfs.crypto.sign(repr(data))
 
+    # Create the new VS and update on the server
+    new_vs = (user.id, new_ihandle, new_gihandles_map, new_vvector, sig)
+    f.write("[INFO]: New VS: {}.\n".format(new_vs))
+    current_vsl.append(new_vs)
+    upload_vsl()
 
+    f.write("[INFO]: User {} exiting post().\n\n".format(user))
 
 class Itable:
     """
@@ -156,12 +243,15 @@ def resolve(i, resolve_groups = True):
     have a group i, which we resolve again to get the ihash set by the last
     user to write the group i.
     """
+    print("[INFO]: Resolving {}".format(i))
     if not isinstance(i, I):
+        print("[BROKE]: {} is not an I, is a {}".format(i, type(i)))
         raise TypeError("{} is not an I, is a {}".format(i, type(i)))
 
     principal = i.p
 
     if not isinstance(principal, Principal):
+        print("[BROKE]: {} is not a Principal, is a {}".format(principal, type(principal)))
         raise TypeError("{} is not a Principal, is a {}".format(principal, type(principal)))
 
     if not i.allocated():
@@ -176,6 +266,7 @@ def resolve(i, resolve_groups = True):
     t = current_itables[principal]
 
     if i.n not in t.mapping:
+        print("[BROKE]: Principal {} does not have i {}".format(principal, i))
         raise LookupError("principal {} does not have i {}".format(principal, i))
 
     # santity checks
@@ -206,6 +297,7 @@ def modmap(mod_as, i, ihash):
     modmap returns the mapped i, with i.n filled in if the passed i was no
     allocated.
     """
+    print("[INFO]: Modmapping {} to point to {}, as user {}".format(i, ihash, mod_as))
     if not isinstance(i, I):
         raise TypeError("{} is not an I, is a {}".format(i, type(i)))
     if not isinstance(mod_as, User):
@@ -269,4 +361,5 @@ def modmap(mod_as, i, ihash):
         print("mapping", i.n, "for group", i.p, "into", t.mapping)
     t.mapping[i.n] = ihash # for groups, ihash is an i
     current_itables[i.p] = t
+    print("[INFO]: Current state of table:\n\t{}".format("".join([])))
     return i

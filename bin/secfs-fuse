@@ -131,19 +131,19 @@ class SecFS(llfuse.Operations):
         else:
             secfs.tables.pre(None, user)
 
-    def _post(self, push_vs=True):
+    def _post(self, push_vs=True, user=None):
         """
         Releases the exclusive server lock obtained by calling pre().
         """
-        secfs.tables.post(push_vs)
+        secfs.tables.post(push_vs, user)
         self.server.unlock()
 
-    def _post_and_getattr(self, i):
+    def _post_and_getattr(self, i, user=None):
         """
         Calls getattr on i, then calls self._post, then returns the getattr.
         """
         attr = _getattr(i)
-        self._post()
+        self._post(user=user)
         return attr
 
     def init(self):
@@ -224,7 +224,7 @@ class SecFS(llfuse.Operations):
                 {Group(100): [u for u in secfs.crypto.keys if u.id != 666]}
             )
             self.server.create(self.share, root)
-            self._post()
+            self._post(user=mounter)
 
         print("root is at", root)
         if isinstance(root, tuple):
@@ -254,7 +254,7 @@ class SecFS(llfuse.Operations):
         lastctx.umask = 0o022
 
         self._pre(mounter)
-        self._post(False)
+        self._post(False, user=mounter)
 
 
     ## All following methods are FUSE standard
@@ -265,27 +265,30 @@ class SecFS(llfuse.Operations):
         print("LOOKUP", inode_p, name)
 
         global lastctx
-        self._pre(User(lastctx.uid))
+        user = User(lastctx.uid)
+        self._pre(user)
         i = secfs.store.tree.find_under(inodes[inode_p], name)
         if i == None:
-            self._post()
+            self._post(user=user)
             raise llfuse.FUSEError(errno.ENOENT)
 
-        return self._post_and_getattr(i)
+        return self._post_and_getattr(i, user=user)
 
     def getattr(self, inode):
         print("GETATTR", inode)
 
         global lastctx
-        self._pre(User(lastctx.uid))
+        user = User(lastctx.uid)
+        self._pre(user)
 
-        return self._post_and_getattr(inodes[inode])
+        return self._post_and_getattr(inodes[inode], user=user)
 
     def opendir(self, inode):
         print("OPENDIR", inode)
 
         global lastctx
-        self._pre(User(lastctx.uid))
+        user = User(lastctx.uid)
+        self._pre(user)
 
         i = inodes[inode]
         node = secfs.fs.get_inode(i)
@@ -293,13 +296,14 @@ class SecFS(llfuse.Operations):
             raise llfuse.FUSEError(errno.ENOTDIR)
 
         ret = new_fh(i, lastctx.uid)
-        self._post()
+        self._post(user=user)
         return ret
 
     def readdir(self, fh, off):
         print("READDIR", fh, off)
 
-        self._pre(fhs[fh][1])
+        user = fhs[fh][1]
+        self._pre(user)
 
         node = secfs.fs.get_inode(fhs[fh][0])
         if node.kind != 0:
@@ -309,13 +313,14 @@ class SecFS(llfuse.Operations):
             print (e[0].decode('utf-8'), e[1], o)
             yield (e[0], _getattr(e[1]), o)
 
-        self._post()
+        self._post(user=user)
 
     def open(self, inode, flags):
         print("OPEN", inode, flags)
 
         global lastctx
-        self._pre(User(lastctx.uid))
+        user = User(lastctx.uid)
+        self._pre(user)
 
         i = inodes[inode]
         node = secfs.fs.get_inode(i)
@@ -323,7 +328,7 @@ class SecFS(llfuse.Operations):
             raise llfuse.FUSEError(errno.EISDIR)
 
         ret = new_fh(i, lastctx.uid)
-        self._post()
+        self._post(user=user)
         return ret
 
     def access(self, inode, mode, ctx):
@@ -356,16 +361,17 @@ class SecFS(llfuse.Operations):
 
         try:
             fh = fhs[fh]
-            self._pre(fh[1])
+            user = fh[1]
+            self._pre(user)
             ret = secfs.fs.read(fh[1], fh[0], offset, length)
-            self._post()
+            self._post(user=user)
             return ret
         except PermissionError as e:
             print("Illegal access:", e)
-            self._post()
+            self._post(user=user)
             raise llfuse.FUSEError(errno.EACCES)
         except:
-            self._post()
+            self._post(user=user)
             raise
 
     def mkdir(self, parent_inode, name, mode, ctx):
@@ -374,7 +380,8 @@ class SecFS(llfuse.Operations):
         # Store ctx for the other methods that don't receive one
         global lastctx
         lastctx = ctx
-        self._pre(User(ctx.uid))
+        user = User(ctx.uid)
+        self._pre(user)
 
         who = User(ctx.uid)
         if (ctx.umask & 0o200) != 0:
@@ -388,13 +395,13 @@ class SecFS(llfuse.Operations):
 
         try:
             i = secfs.fs.mkdir(inodes[parent_inode], name, User(ctx.uid), who)
-            return self._post_and_getattr(i)
+            return self._post_and_getattr(i, user=user)
         except PermissionError as e:
             print("Illegal access:", e)
-            self._post()
+            self._post(user=user)
             raise llfuse.FUSEError(errno.EACCES)
         except:
-            self._post()
+            self._post(user=user)
             raise
 
     def create(self, parent_inode, name, mode, flags, ctx):
@@ -403,7 +410,8 @@ class SecFS(llfuse.Operations):
         # Store ctx for the other methods that don't receive one
         global lastctx
         lastctx = ctx
-        self._pre(User(ctx.uid))
+        user = User(ctx.uid)
+        self._pre(user)
 
         who = User(ctx.uid)
         if (ctx.umask & 0o200) != 0:
@@ -418,14 +426,14 @@ class SecFS(llfuse.Operations):
         try:
             i = secfs.fs.create(inodes[parent_inode], name, User(ctx.uid), who)
             ret = (new_fh(i, ctx.uid), _getattr(i))
-            self._post()
+            self._post(user=user)
             return ret
         except PermissionError as e:
             print("Illegal access:", e)
-            self._post()
+            self._post(user=user)
             raise llfuse.FUSEError(errno.EACCES)
         except:
-            self._post()
+            self._post(user=user)
             raise
 
     def write(self, fh, off, buf):
@@ -433,16 +441,17 @@ class SecFS(llfuse.Operations):
 
         try:
             fh = fhs[fh]
-            self._pre(fh[1])
+            user = fh[1]
+            self._pre(user)
             ret = secfs.fs.write(fh[1], fh[0], off, buf)
-            self._post()
+            self._post(user=user)
             return ret
         except PermissionError as e:
             print("Illegal access:", e)
-            self._post()
+            self._post(user=user)
             raise llfuse.FUSEError(errno.EACCES)
         except:
-            self._post()
+            self._post(user=user)
             raise
 
     def setattr(self, inode, attr):
@@ -453,12 +462,12 @@ class SecFS(llfuse.Operations):
 
         global lastctx
         who = User(lastctx.uid)
-
-        self._pre(who)
+        user = who
+        self._pre(user)
         i = inodes[inode]
 
         if not secfs.access.can_write(who, i):
-            self._post()
+            self._post(user=user)
             if i.p.is_group():
                 print("cannot setattr on group-owned file {0} as {1}; user is not in group".format(i, who))
             else:
@@ -477,7 +486,7 @@ class SecFS(llfuse.Operations):
                 # NOTE: we could technically do this, but it is much more
                 # involved. Would need to decrypt, truncate/extend, and then
                 # re-encrypt. Meh.
-                self._post()
+                self._post(user=user)
                 raise llfuse.FUSEError(errno.ENOSYS)
         if attr.st_mtime is not None:
             node.mtime = attr.st_mtime
@@ -492,7 +501,7 @@ class SecFS(llfuse.Operations):
         # put new hash in tree
         new_hash = secfs.store.block.store(node.bytes())
         secfs.tables.modmap(who, i, new_hash)
-        return self._post_and_getattr(i)
+        return self._post_and_getattr(i, user=user)
 
     def mknod(self, parent_inode, name, mode, rdev, ctx):
         # This is a bit of a hack, and deserves some explanation.

@@ -127,7 +127,6 @@ def _create(parent_i, name, create_as, create_for, isdir):
     #
     # Also make sure that you *return the final i* for the new inode!
 
-    # TODO: Update user and group i-handles (later on?)
     # TODO: Should I allocate this an empty file with secfs.store.block.store('')?
     # TODO: Using I(create_for) here should automatically take care of group indirection, no?
 
@@ -155,6 +154,7 @@ def mkdir(parent_i, name, create_as, create_for):
     Create a new directory.
     See secfs.fs._create
     """
+    print("Current ITables: {}".format(secfs.tables.current_itables))
     return _create(parent_i, name, create_as, create_for, True)
 
 def read(read_as, i, off, size):

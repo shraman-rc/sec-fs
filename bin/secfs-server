@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 import threading
+import pickle
 seq_lock = threading.Lock()
 
 class SecFSRPC():
     def __init__(self):
         self.roots = {}
-        self._vsl = []
+        self._vsl = pickle.dumps([])
 
         #
         # NOTE: All your server state *must* go here.
@@ -18,9 +19,12 @@ class SecFSRPC():
     def download_vsl(self):
         return self._vsl
 
-    def upload_vsl(self, vsl):
-        import base64
-        self._vsl = base64.b64decode(vsl)
+    def upload_vsl(self, vsl_blob):
+        if "data" in vsl_blob:
+            import base64
+            self._vsl = base64.b64decode(vsl_blob["data"])
+        else:
+            raise Exception("error while uploading vsl: no 'data' in blob")
 
     def lock(self):
         # global client lock
