@@ -39,7 +39,7 @@ def encrypt_sym(key, data):
     f = Fernet(key)
     return f.encrypt(data)
 
-def sign(key, data):
+def sign(private_key, data):
     """
     Signs the given data with the secret key.
     """
@@ -54,16 +54,14 @@ def sign(key, data):
     # load data
     signer.update(data)
     # compute signature
-    signature = signer.finalize()
+    return signer.finalize()
 
-    return signature
-
-def verify(sig, key, data):
+def verify(sig, public_key, data):
   # build verifier
-  verifier = key.verifier(
+  verifier = public_key.verifier(
     sig,
     padding.PSS(
-      mgf=padding.MGF(hashes.SHA256()),
+      mgf=padding.MGF1(hashes.SHA256()),
       salt_length=padding.PSS.MAX_LENGTH
     ),
     hashes.SHA256()
@@ -73,12 +71,10 @@ def verify(sig, key, data):
   # check signature
   try:
     verifier.verify()
-  except InvalidSignature:
+  except cryptography.exceptions.InvalidSignature:
     return False
   
   return True
-
-  
 
 def generate_key(user):
     """

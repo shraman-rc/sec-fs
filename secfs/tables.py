@@ -24,6 +24,17 @@ old_itables = {}
 
 # TODO: Remove
 f = open("custom_output.txt", "w")
+# For debug only: Print current state of tables
+#def _generate_itable_string(itable):
+#    "\n\t\t".join([str(p) for p in itable.mapping])
+#def _generate_itables_string(itables_map):
+#    return "\n\t".join(["{}:\n\t\t{}".format(k, _generate_itable_string(v))
+#                        for (k,v) in itables_map.items()])
+#def fwrite_tables():
+#    global old_itables, current_itables
+#    f.write("Old i-tables:\n\t{}\n".format(_generate_itables_string(old_itables)))
+#    f.write("Current i-tables:\n\t{}\n".format(_generate_itables_string(current_itables)))
+
 
 # a server connection handle is passed to us at mount time by secfs-fuse
 server = None
@@ -61,12 +72,12 @@ def validate_vsl(new_vsl):
                 return False
         prev_vv = new_vv
         # Verify the signatures
-        data = (uid, ihandle, glist, vv)
+        data = (uid, ihandle, glist, new_vv)
         user = User(uid)
-        if user not in usermap:
+        if user not in secfs.fs.usermap:
             return False
-        public_key = usermap[user]
-        if not secfs.crypto.verify(sig, public_key, repr(data)):
+        public_key = secfs.fs.usermap[user]
+        if not secfs.crypto.verify(sig, public_key, pickle.dumps(data)):
             return False
         # TODO: Verify that the user had permission to sign those changes
         
@@ -156,17 +167,6 @@ def pre(refresh, user):
         raise Exception("Failed validation")
     f.write("[INFO]: User {} exiting pre().\n\n".format(user))
 
-# For debug only: Print current state of tables
-#def _generate_itable_string(itable):
-#    "\n\t\t".join([str(p) for p in itable.mapping])
-#def _generate_itables_string(itables_map):
-#    return "\n\t".join(["{}:\n\t\t{}".format(k, _generate_itable_string(v))
-#                        for (k,v) in itables_map.items()])
-#def fwrite_tables():
-#    global old_itables, current_itables
-#    f.write("Old i-tables:\n\t{}\n".format(_generate_itables_string(old_itables)))
-#    f.write("Current i-tables:\n\t{}\n".format(_generate_itables_string(current_itables)))
-
 def post(push_vs, user):
     f.write("[INFO]: User {} in post().\n".format(user))
     # fwrite_tables()
@@ -201,7 +201,8 @@ def post(push_vs, user):
 
     # Add signature
     data = (user.id, new_ihandle, new_gihandles_map, new_vvector)
-    sig = secfs.crypto.sign(repr(data))
+    private_key = secfs.crypto.keys[user]
+    sig = secfs.crypto.sign(private_key, pickle.dumps(data))
 
     # Create the new VS and update on the server
     new_vs = (user.id, new_ihandle, new_gihandles_map, new_vvector, sig)
