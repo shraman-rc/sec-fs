@@ -43,9 +43,10 @@ def validate_vsl(new_vsl):
         (uid, ihandle, glist, vv, sig) = new_vsl
         data = (uid, ihandle, glist, vv)
         # Do we have the public key
-        if uid not in usermap:
+        user = User(uid)
+        if user not in usermap:
           return False
-        key =  usermap[uid]
+        key =  usermap[user]
         # Verify signature
         if not crypto.verify(sig, key, repr(data)):
             return False
