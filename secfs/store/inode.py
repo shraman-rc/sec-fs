@@ -2,6 +2,7 @@ import pickle
 import secfs.store.block
 import secfs.crypto
 import secfs.fs
+from secfs.types import I, Principal, User, Group
 
 class Inode:
     def __init__(self):
