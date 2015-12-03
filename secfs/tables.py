@@ -127,13 +127,12 @@ def pre(refresh, user):
 
     f.write("User {} acquiring lock.\n".format(user))
 
-    if refresh != None:
-        # refresh usermap and groupmap
-        refresh()
-
     # Pull the VSL and initialize I-Tables
     if download_vsl():
         update_itables()
+        # refresh user and group map AFTER setting up itables
+        if refresh:
+            refresh()
     else: # Failed validation TODO: How to handle this?
         raise Exception("Failed validation")
 
@@ -208,12 +207,15 @@ def resolve(i, resolve_groups = True):
     have a group i, which we resolve again to get the ihash set by the last
     user to write the group i.
     """
+    print("[INFO]: Resolving {}".format(i))
     if not isinstance(i, I):
+        print("[BROKE]: {} is not an I, is a {}".format(i, type(i)))
         raise TypeError("{} is not an I, is a {}".format(i, type(i)))
 
     principal = i.p
 
     if not isinstance(principal, Principal):
+        print("[BROKE]: {} is not a Principal, is a {}".format(principal, type(principal)))
         raise TypeError("{} is not a Principal, is a {}".format(principal, type(principal)))
 
     if not i.allocated():
@@ -228,6 +230,7 @@ def resolve(i, resolve_groups = True):
     t = current_itables[principal]
 
     if i.n not in t.mapping:
+        print("[BROKE]: Principal {} does not have i {}".format(principal, i))
         raise LookupError("principal {} does not have i {}".format(principal, i))
 
     # santity checks
@@ -258,6 +261,7 @@ def modmap(mod_as, i, ihash):
     modmap returns the mapped i, with i.n filled in if the passed i was no
     allocated.
     """
+    print("[INFO]: Modmapping {} to point to {}, as user {}".format(i, ihash, mod_as))
     if not isinstance(i, I):
         raise TypeError("{} is not an I, is a {}".format(i, type(i)))
     if not isinstance(mod_as, User):
@@ -321,4 +325,5 @@ def modmap(mod_as, i, ihash):
         print("mapping", i.n, "for group", i.p, "into", t.mapping)
     t.mapping[i.n] = ihash # for groups, ihash is an i
     current_itables[i.p] = t
+    print("[INFO]: Current state of table:\n\t{}".format("".join([])))
     return i
