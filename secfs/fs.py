@@ -82,7 +82,7 @@ def init(owner, users, groups):
 
     return root_i
 
-def _create(parent_i, name, create_as, create_for, isdir):
+def _create(parent_i, name, create_as, create_for, isdir, encrypt):
     """
     _create allocates a new file, and links it into the directory at parent_i
     with the given name. The new file is owned by create_for, but is created
@@ -114,6 +114,10 @@ def _create(parent_i, name, create_as, create_for, isdir):
     node.mtime = node.ctime
     node.kind = 0 if isdir else 1
     node.ex = isdir
+    
+    if encrypt:
+        symkey = Fernet.generate_key()
+        node.encrypt(create_for, symkey)
 
     # Here, you will need to:
     #
@@ -142,20 +146,20 @@ def _create(parent_i, name, create_as, create_for, isdir):
     link(create_as, new_i, parent_i, name)
     return new_i
 
-def create(parent_i, name, create_as, create_for):
+def create(parent_i, name, create_as, create_for, encrypt):
     """
     Create a new file.
     See secfs.fs._create
     """
-    return _create(parent_i, name, create_as, create_for, False)
+    return _create(parent_i, name, create_as, create_for, False, encrypt)
 
-def mkdir(parent_i, name, create_as, create_for):
+def mkdir(parent_i, name, create_as, create_for, encrypt):
     """
     Create a new directory.
     See secfs.fs._create
     """
     print("Current ITables: {}".format(secfs.tables.current_itables))
-    return _create(parent_i, name, create_as, create_for, True)
+    return _create(parent_i, name, create_as, create_for, True, encrypt)
 
 def read(read_as, i, off, size):
     """
@@ -172,7 +176,8 @@ def read(read_as, i, off, size):
         else:
             raise PermissionError("cannot read from user-readable file {0} as {1}".format(i, read_as))
 
-    return get_inode(i).read()[off:off+size]
+    # Inode.read() deciphers blocks if necessary 
+    return get_inode(i).read(read_as)[off:off+size]
 
 def write(write_as, i, off, buf):
     """
@@ -192,7 +197,7 @@ def write(write_as, i, off, buf):
     node = get_inode(i)
 
     # TODO: this is obviously stupid -- should not get rid of blocks that haven't changed
-    bts = node.read()
+    bts = node.read(write_as)
 
     # write also allows us to extend a file
     if off + len(buf) > len(bts):
@@ -201,7 +206,8 @@ def write(write_as, i, off, buf):
         bts = bts[:off] + buf + bts[off+len(buf):]
 
     # update the inode
-    node.blocks = [secfs.store.block.store(bts)]
+    node.write(
+    # node.blocks = [secfs.store.block.store(bts)]
     node.mtime = time.time()
     node.size = len(bts)
 
