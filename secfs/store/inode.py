@@ -33,7 +33,7 @@ class Inode:
 
     def get_key(self, user):
         if not isinstance(user, User):
-            raise TypeError("{} cannot retrieve an encrypted key
+            raise TypeError("{} cannot retrieve an encrypted key \
                 because it is not a user".format(user))
         # Get the RSA encrypted symmetric key particular to this user
         encrypted_key = self.encryption_keys[user.id]
@@ -53,15 +53,25 @@ class Inode:
         n.__dict__.update(pickle.loads(d))
         return n
 
-    def read(self, read_as):
+    def read(self, read_as=None):
         """
         Reads the block content of this inode.
         """
-        if not self.encrypted:
-            return b"".join([secfs.store.block.load(b) for b in self.blocks])
-        # Otherwise, decrypt the blocks
-        sym_key = self.get_key(read_as)
-        [secfs.store.block.load(b) for b in self.blocks]
+        blocks = [secfs.store.block.load(b) for b in self.blocks]
+        if self.encrypted:
+            if read_as == None:
+                raise Exception("read_as must be declared param for encrypted inodes")
+            # Otherwise, decrypt the blocks
+            sym_key = self.get_key(read_as)
+            blocks = [secfs.store.block.load(b, sym_key) for b in self.blocks]
+        return b"".join(blocks)
+
+    def write(self, write_as, bts):
+        sym_key = None
+        if self.encrypted:
+            # Encrypt the data using sym_key
+            sym_key = self.get_key(write_as)
+        self.blocks = [secfs.store.block.store(bts, sym_key)]
 
     def bytes(self):
         """
