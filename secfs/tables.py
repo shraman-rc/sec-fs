@@ -81,7 +81,7 @@ server = None
 def register(_server):
     global server
     server = _server
-    
+
 def upload_vsl():
     #f.write("[INFO]: Uploading VSL.\n")
     print("->[INFO]: Uploading VSL.")
@@ -136,8 +136,9 @@ def download_vsl():
 
     #   3. Verify the signatures (only for users in usermap, dont trust others)
     #       - For those signatures only, create the itable
-    global current_itables
+    global current_itables, modified_itables
     current_itables = {} # Build from scratch
+    modified_itables = set()
     new_group_ihandles = {}
     for vs in current_vsl:
         (uid, ihandle, ghandle_map, new_vv, sig) = vs
@@ -219,7 +220,7 @@ def post(push_vs, user):
         print("->[INFO]: User {} exited post() without pushing VSL.".format(user))
         return
 
-    global current_vsl, current_itables, old_itables
+    global current_vsl, current_itables, modified_itables
     # Gather which group itables have been updated
     new_gitables_map = {}
     for p in current_itables:
