@@ -115,20 +115,23 @@ def _create(parent_i, name, create_as, create_for, isdir, encrypt):
     node.kind = 0 if isdir else 1
     node.ex = isdir
 
+    # Encrypt if needed
+    sym_key = None
+    if encrypt:
+        symkey = Fernet.generate_key()
+        node.encrypt(create_for, symkey)
+
     # Here, you will need to:
     #
     #  - [DONE] store the newly created inode (node.bytes()) on the server
     #  - [DONE] map that block to an i owned by the user
     #  - [DONE] if a directory is being created, create entries for . and ..
-    #  - [MAYBE?] if create_for is a group, you will
+    #  - [DONE] if create_for is a group, you will
     #    also have to create a group i for that group, and point it to the user's i
     #  - [DONE] call link() to link the new i into the directory at parent_i with the
     #    given name
     #
     # Also make sure that you *return the final i* for the new inode!
-
-    # TODO: Should I allocate this an empty file with secfs.store.block.store('')?
-    # TODO: Using I(create_for) here should automatically take care of group indirection, no?
 
     new_ihash = secfs.store.block.store(node.bytes())
     new_i = secfs.tables.modmap(create_as, I(create_for), new_ihash)
@@ -172,7 +175,8 @@ def read(read_as, i, off, size):
         else:
             raise PermissionError("cannot read from user-readable file {0} as {1}".format(i, read_as))
 
-    return get_inode(i).read()[off:off+size]
+    # Inode.read() deciphers blocks if necessary 
+    return get_inode(i).read(read_as)[off:off+size]
 
 def write(write_as, i, off, buf):
     """
@@ -192,7 +196,7 @@ def write(write_as, i, off, buf):
     node = get_inode(i)
 
     # TODO: this is obviously stupid -- should not get rid of blocks that haven't changed
-    bts = node.read()
+    bts = node.read(write_as)
 
     # write also allows us to extend a file
     if off + len(buf) > len(bts):
@@ -201,7 +205,8 @@ def write(write_as, i, off, buf):
         bts = bts[:off] + buf + bts[off+len(buf):]
 
     # update the inode
-    node.blocks = [secfs.store.block.store(bts)]
+    node.write(write_as, bts)
+    # node.blocks = [secfs.store.block.store(bts)] <- originally
     node.mtime = time.time()
     node.size = len(bts)
 

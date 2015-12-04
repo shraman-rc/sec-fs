@@ -39,6 +39,32 @@ def encrypt_sym(key, data):
     f = Fernet(key)
     return f.encrypt(data)
 
+def decrypt_asym(private_key, ciphertext):
+    """
+    Standard RSA asymmetric decryption
+    """
+    return private_key.decrypt(
+        ciphertext,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA1()),
+            algorithm=hashes.SHA1(),
+            label=None
+        )
+    )
+
+def encrypt_asym(public_key, data):
+    """
+    Standard RSA asymmetric encryption
+    """
+    return public_key.encrypt(
+        data,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA1()),
+            algorithm=hashes.SHA1(),
+            label=None
+        )
+    )
+
 def sign(private_key, data):
     """
     Signs the given data with the secret key.
