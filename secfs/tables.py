@@ -16,11 +16,10 @@ from secfs.types import I, Principal, User, Group
 #       - the "version-vector" is a map from uid/gid's to versions
 #       - the "signature" the signed vsl
 current_vsl = []
-old_vsl_length = 0
 # current_itables represents the current snapshot of the file system
 #   - maps Principal instances -> itables
 current_itables = {}
-old_itables = {}
+modified_itables = set()
 
 # TODO: Remove
 # f = open("custom_output.txt", "w")
@@ -35,58 +34,54 @@ old_itables = {}
 #    f.write("Old i-tables:\n\t{}\n".format(_generate_itables_string(old_itables)))
 #    f.write("Current i-tables:\n\t{}\n".format(_generate_itables_string(current_itables)))
 
+# def validate_vsl(new_vsl):
+#     '''
+#     returns: True if the new VSL is consistent, False otherwise
+#     '''
+#     global current_vsl
+
+# #    # Ensure fork-consistency by making sure
+# #    # the previous VSL is a prefix of the new one
+# #    for i, vs in enumerate(current_vsl):
+# #        if new_vsl[i] != vs:
+# #            # Prefixes don't match, the last change from this client was not
+# #            # properly registered
+# #            return False
+
+#     # Validate the VSL:
+#     #   - Make sure they are totally ordered
+#     #   - Verify the signatures (for users in usermap)
+#     #       - For those signatures only, create the itable
+#     prev_vv = current_vsl[-1][3]
+#     for i in range(len(current_vsl), len(new_vsl)):
+#         (uid, ihandle, glist, new_vv, sig) = new_vsl[i]
+#         # Make sure they are totally ordered
+#         for ugid in prev_vv:
+#             if prev_vv[ugid] > new_vv[ugid]:
+#                 return False
+#         prev_vv = new_vv
+#         # Verify the signatures
+#         data = (uid, ihandle, glist, new_vv)
+#         user = User(uid)
+#         if user not in secfs.fs.usermap:
+#             return False
+#         public_key = secfs.fs.usermap[user]
+#         if not secfs.crypto.verify(sig, public_key, pickle.dumps(data)):
+#             return False
+#         # TODO: Verify that the user had permission to sign those changes
+        
+#     # Step 3: Check integrity of data blocks in the users itable?
+#     # TODO: Implement this elsewhere, since its not really a VSL check
+
+#     # Passed all tests
+#     return True
 
 # a server connection handle is passed to us at mount time by secfs-fuse
 server = None
 def register(_server):
     global server
     server = _server
-
-def validate_vsl(new_vsl):
-    '''
-    returns: True if the new VSL is consistent, False otherwise
-    '''
-    global current_vsl
-
-    if len(current_vsl) == 0:
-        return True
-
-    # Step 1: Ensure fork-consistency by making sure
-    # the previous VSL is a prefix of the new one
-    for i, vs in enumerate(current_vsl):
-        if new_vsl[i] != vs:
-            # Prefixes don't match, the last change from this client was not
-            # properly registered
-            return False
-
-    # Step 2: Validate new changes:
-    #   - Make sure they are totally ordered
-    #   - Verify the signatures
-    #   - Verify that the users had permission to sign those changes
-    prev_vv = current_vsl[-1][3]
-    for i in range(len(current_vsl), len(new_vsl)):
-        (uid, ihandle, glist, new_vv, sig) = new_vsl[i]
-        # Make sure they are totally ordered
-        for ugid in prev_vv:
-            if prev_vv[ugid] > new_vv[ugid]:
-                return False
-        prev_vv = new_vv
-        # Verify the signatures
-        data = (uid, ihandle, glist, new_vv)
-        user = User(uid)
-        if user not in secfs.fs.usermap:
-            return False
-        public_key = secfs.fs.usermap[user]
-        if not secfs.crypto.verify(sig, public_key, pickle.dumps(data)):
-            return False
-        # TODO: Verify that the user had permission to sign those changes
-        
-    # Step 3: Check integrity of data blocks in the users itable?
-    # TODO: Implement this elsewhere, since its not really a VSL check
-
-    # Passed all tests
-    return True
-
+    
 def upload_vsl():
     #f.write("[INFO]: Uploading VSL.\n")
     print("->[INFO]: Uploading VSL.")
@@ -97,9 +92,9 @@ def upload_vsl():
 def download_vsl():
     '''
     Downloads and validates the VSL.
-    Updates global data structures.
+    Updates global data structures including itables.
 
-    returns: True on successful validation, False otherwise
+    returns: True on successful validation and updating, False otherwise
     '''
     #f.write("[INFO]: Downloading VSL.\n")
     print("->[INFO]: Downloading VSL.")
@@ -115,42 +110,78 @@ def download_vsl():
         print("->[ERROR]: Failed to download VSL: no 'data' attribute in blob.")
         raise Exception("failed to download vsl: no 'data' attribute in RPC blob")
 
-    # Validate the newly downloaded VSL
-    new_vsl = pickle.loads(serialized_vsl)
-    #f.write("[INFO]: Downloaded VSL: {}.\n".format(new_vsl))
-    print("->[INFO]: Downloaded VSL: {}.".format(new_vsl))
-    if not validate_vsl(new_vsl):
-        #f.write("[ERROR]: VSL Not Valid!\n")
-        print("->[ERROR]: VSL Not Valid!")
-        return False
+    # Deserialize VSL
+    global current_vsl
+    current_vsl = pickle.loads(serialized_vsl)
+    #f.write("[INFO]: Downloaded VSL: {}.\n".format(current_vsl))
+    print("->[INFO]: Downloaded VSL: {}.".format(current_vsl))
 
-    # Populate the global VSL with updated info
-    global current_vsl, old_vsl_length
-    old_vsl_length = len(current_vsl)
-    current_vsl = new_vsl
+    if len(current_vsl) == 0:
+        return True
+
+    # --- Validation --- #
+    #   1. Make sure they are totally ordered
+    if len(current_vsl) > 1:
+        prev_vv = current_vsl[0][3]
+        for vs in current_vsl[1:]:
+            (uid, ihandle, glist, new_vv, sig) = vs
+            for ugid in prev_vv:
+                if prev_vv[ugid] > new_vv[ugid]:
+                    print("->[ERROR]: VSL not sorted")
+                    return False
+            prev_vv = new_vv
+
+    #   2. Check that this user's previous VS matches the current one
+    # TODO
+
+    #   3. Verify the signatures (only for users in usermap, dont trust others)
+    #       - For those signatures only, create the itable
+    global current_itables
+    current_itables = {} # Build from scratch
+    new_group_ihandles = {}
+    for vs in current_vsl:
+        (uid, ihandle, ghandle_map, new_vv, sig) = vs
+        data = (uid, ihandle, ghandle_map, new_vv)
+        user = User(uid)
+        if user in secfs.fs.usermap:
+            public_key = secfs.fs.usermap[user]
+            if not secfs.crypto.verify(sig, public_key, pickle.dumps(data)):
+                print("->[ERROR]: Signature for user {}'s VS does not match".format(uid))
+                return False
+            # Load the itable for this user and update relevant group ihandles
+            # since this VSL should be in sorted order
+            print("->[INFO]: Creating itable for user {}".format(uid))
+            current_itables[user] = Itable.load(ihandle)
+            new_group_ihandles.update(ghandle_map)
+
+    # Now load the group itables with the most recent group ihandles
+    for gid in new_group_ihandles:
+        print("->[INFO]: Creating itable for group {}".format(gid))
+        current_itables[Group(gid)] = Itable.load(new_group_ihandles[gid])
+
+    # Passed all tests
     return True
 
-def update_itables():
-    #f.write("[INFO]: Updating i-tables.\n")
-    print("->[INFO]: Updating i-tables.")
-    global current_vsl, old_vsl_length, current_itables, old_itables
-    new_user_ihandles = {}
-    new_group_ihandles = {}
+# def update_itables():
+#     #f.write("[INFO]: Updating i-tables.\n")
+#     print("->[INFO]: Updating i-tables.")
+#     global current_vsl, old_vsl_length, current_itables, old_itables
+#     new_user_ihandles = {}
+#     new_group_ihandles = {}
+#     # Iterate only through the new VS's
+#     for vs in current_vsl[old_vsl_length:]:
+#         uid, ihandle, gihandle_map, vvector, sig = vs
+#         new_user_ihandles[uid] = ihandle
+#         new_group_ihandles.update(gihandle_map)
 
-    # Iterate only through the new VS's
-    for vs in current_vsl[old_vsl_length:]:
-        uid, ihandle, gihandle_map, vvector, sig = vs
-        new_user_ihandles[uid] = ihandle
-        new_group_ihandles.update(gihandle_map)
+#     # Save a copy of the itables so we know which updates we should push to the server
+#     old_itables = dict(current_itables)
 
-    # Save a copy of the itables so we know which updates we should push to the server
-    old_itables = dict(current_itables)
-
-    # Now update the global itable reference to be used
-    for uid in new_user_ihandles:
-        current_itables[User(uid)] = Itable.load(new_user_ihandles[uid])
-    for gid in new_group_ihandles:
-        current_itables[Group(gid)] = Itable.load(new_group_ihandles[gid])
+#     # Now update the global itable reference to be used
+#     for uid in new_user_ihandles:
+#         current_itables[user] = Itable.load(new_user_ihandles[uid])
+#     for gid in new_group_ihandles:
+#         current_itables[Group(gid)] = Itable.load(new_group_ihandles[gid])
 
 def pre(refresh, user):
     """
@@ -163,13 +194,13 @@ def pre(refresh, user):
 
     # Pull the VSL and initialize I-Tables
     if download_vsl():
-        update_itables()
         # refresh user and group map AFTER setting up itables
+        # TODO: This needs to be fixed in the first-time client case
         if refresh != None:
             #f.write("[INFO]: Calling {}.\n".format(refresh))
             print("[INFO]: Calling {}.".format(refresh))
             refresh()
-    else: # Failed validation TODO: How to handle this?
+    else:
         #f.write("[ERROR]: Failed validation!\n")
         print("->[ERROR]: Failed validation!")
         raise Exception("Failed validation")
