@@ -1,4 +1,5 @@
 # This file handles all interaction with the SecFS server's blob storage.
+import secfs.crypto
 
 # a server connection handle is passed to us at mount time by secfs-fuse
 server = None

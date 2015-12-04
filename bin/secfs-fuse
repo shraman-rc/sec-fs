@@ -608,22 +608,12 @@ def _getattr(i):
             entry.st_mode |= stat.S_IFREG
 
         # Is it encrypted (i.e. limited read access)?
-        # If so, limit read permissions just as you would for writes
+        entry.st_mode |= stat.S_IRUSR
         if n.encrypted:
             if i.p.is_group():
-                # owned by group
                 entry.st_mode |= stat.S_IRGRP
-                entry.st_gid = i.p.id
-
-                # who read last? TODO: Do we need this?
-                # real_i = secfs.tables.resolve(i, False)
-                # entry.st_uid = real_i.p.id
-            else:
-                entry.st_mode |= stat.S_IRUSR
-                entry.st_uid = i.p.id
-                entry.st_gid = 0
         else:
-            entry.st_mode |= stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
+            entry.st_mode |= stat.S_IRGRP | stat.S_IROTH
 
         # Who can write (i.e. owned by group or user)?
         if i.p.is_group():
