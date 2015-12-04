@@ -21,6 +21,7 @@ def can_read(user, i):
 
     # If I is encrypted, it undergoes same permission checks as 'write'
     if is_encrypted(i):
+        print("->[INFO]: User {} trying to access encrypted file {}".format(user, i))
         # If i is owned by a user, and that user isn't you, you can't read
         if i.p.is_user() and i.p != user:
             return False

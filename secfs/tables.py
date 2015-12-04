@@ -123,6 +123,12 @@ def download_vsl(only_check_root=False):
                 print("->[INFO]: Creating itable for user {}".format(uid))
                 current_itables[user] = Itable.load(ihandle)
                 new_group_ihandles.update(ghandle_map)
+            else:
+                # If a user hasn't been mapped in usermap, that means it is not part
+                # of a legitimate set of users as determined by root. This is bad since
+                # this is a possibly rogue VS hiding in the VSL. Instead of ignoring it
+                # we crash.
+                raise Exception("->[ERROR]: Unmapped user {} in VSL!".format(uid))
 
         # Now load the group itables with the most recent group ihandles
         for gid in new_group_ihandles:
@@ -133,12 +139,18 @@ def download_vsl(only_check_root=False):
     # Passed all tests
     return True
 
-def pre(refresh, user, only_check_root=False):
+def pre(refresh, user, only_check_root=False, should_download=True):
     """
     Called before all user file system operations, right after we have obtained
     an exclusive server lock.
     """
     print("->[INFO]: User {} entering pre().".format(user))
+
+    if not should_download:
+        # secfs.fs.usermap probably not initialized yet, don't bother
+        # downloading anything (just acquire the FS lock)
+        print("->[INFO]: User {} exiting pre() without downloading VSL.\n".format(user))
+        return
 
     # Pull the VSL and initialize I-Tables
     if download_vsl(only_check_root):

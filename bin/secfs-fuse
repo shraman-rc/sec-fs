@@ -114,7 +114,7 @@ class SecFS(llfuse.Operations):
         self.share = share
         super()
 
-    def _pre(self, user, do_refresh=True):
+    def _pre(self, user, do_refresh=True, only_check_root=False, download_vsl=True):
         """
         _pre should be called before every file system operation to avoid
         modifying the share while other clients are doing so. it will get an
@@ -127,9 +127,9 @@ class SecFS(llfuse.Operations):
         """
         self.server.lock()
         if do_refresh:
-            secfs.tables.pre(_reload_principals, user)
+            secfs.tables.pre(_reload_principals, user, only_check_root, download_vsl)
         else:
-            secfs.tables.pre(None, user)
+            secfs.tables.pre(None, user, only_check_root, download_vsl)
 
     def _post(self, push_vs=True, user=None):
         """
@@ -218,7 +218,7 @@ class SecFS(llfuse.Operations):
 
             # initialize a new share, and tell the server about it. don't
             # refresh the user and group maps, as they have not yet been built.
-            self._pre(mounter, False)
+            self._pre(mounter, False, download_vsl=False) # Don't bother doing VSL things if theres no usermap...
             root = secfs.fs.init(mounter,
                 {u: secfs.crypto.generate_key(u) for u in secfs.crypto.keys},
                 {Group(100): [u for u in secfs.crypto.keys if u.id != 666]}
@@ -253,7 +253,7 @@ class SecFS(llfuse.Operations):
         lastctx.gid = int(os.getegid())
         lastctx.umask = 0o022
 
-        self._pre(mounter)
+        self._pre(mounter, only_check_root=True)
         self._post(False, user=mounter)
 
 
