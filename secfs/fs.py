@@ -247,3 +247,34 @@ def link(link_as, i, parent_i, name):
 
     parent_ihash = secfs.store.tree.add(parent_i, name, i)
     secfs.tables.modmap(link_as, parent_i, parent_ihash)
+
+def unlink(unlink_as, parent_i, name):
+    i = secfs.store.tree.find_under(parent_i, name)
+    if i == None:
+        # TODO: "No such file or directory" error?
+        return
+    if not isinstance(parent_i, I):
+        raise TypeError("{} is not an I, is a {}".format(parent_i, type(parent_i)))
+    if not isinstance(i, I):
+        raise TypeError("{} is not an I, is a {}".format(i, type(i)))
+    if not isinstance(unlink_as, User):
+        raise TypeError("{} is not a User, is a {}".format(unlink_as, type(unlink_as)))
+
+    # Check parent directory perms
+    if not secfs.access.can_write(unlink_as, parent_i):
+        if parent_i.p.is_group():
+            raise PermissionError("cannot unlink from parent directory {0} as {1}; user is not in group".format(parent_i, unlink_as))
+        else:
+            raise PermissionError("cannot unlink from parent directory {0} as {1}".format(parent_i, unlink_as))
+    # Check child directory/file perms
+    if not secfs.access.can_write(unlink_as, i):
+        if i.p.is_group():
+            raise PermissionError("cannot unlink {0} as {1}; user is not in group".format(i, unlink_as))
+        else:
+            raise PermissionError("cannot unlink {0} as {1}".format(i, unlink_as))
+
+    # Remove from parent directory
+    new_ihash = secfs.store.tree.remove(parent_i, name)
+    secfs.tables.modmap(unlink_as, parent_i, new_ihash)
+    # Remove all references to the file in itables
+    secfs.tables.modunmap(unlink_as, i)

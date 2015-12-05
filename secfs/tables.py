@@ -282,6 +282,41 @@ def resolve(i, resolve_groups = True):
 
     return t.mapping[i.n]
 
+def modunmap(mod_as, i):
+    """
+    Removes 'i' from all i-tables
+    """
+    print("->[INFO]: Unmapping {} in all itables, as user {}".format(i, mod_as))
+    if not isinstance(i, I):
+        raise TypeError("{} is not an I, is a {}".format(i, type(i)))
+    if not isinstance(mod_as, User):
+        raise TypeError("{} is not a User, is a {}".format(mod_as, type(mod_as)))
+
+    assert mod_as.is_user() # only real users can mod
+
+    global current_itables
+    # Group i-table modification
+    if i.p.is_group():
+        # Save the real i on user's table
+        real_i = resolve(i, False)
+        # First unmap the group i
+        group_t = current_itables[i.p]
+        if i.n not in group_t.mapping:
+            raise IndexError("(Unmapping) invalid inumber {} for group itable {}".format(i.n, group_t))
+        # modify the entry, and store back the updated itable
+        del group_t.mapping[i.n]
+        current_itables[i.p] = group_t
+        # Set 'i' for unlinking on user table
+        i = real_i
+
+    # User i-table modification
+    user_t = current_itables[i.p]
+    if i.n not in user_t.mapping:
+        raise IndexError("(Unmapping) invalid inumber {} for user itable {}".format(i.n, user_t))
+    # modify the entry, and store back the updated itable
+    del user_t.mapping[i.n]
+    current_itables[i.p] = user_t
+
 def modmap(mod_as, i, ihash):
     """
     Changes or allocates i so it points to ihash.

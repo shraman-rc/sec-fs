@@ -548,6 +548,20 @@ class SecFS(llfuse.Operations):
         lastctx = ctx
         raise llfuse.FUSEError(errno.ENOSYS)
 
+    def unlink(self, parent_inode, name):
+        print("UNLINK", parent_inode, name)
+
+        global lastctx
+        who = User(lastctx.uid)
+        self._pre(who)
+        parent_i = inodes[parent_inode]
+
+        try:
+            secfs.fs.unlink(who, parent_i, name)
+            self._post(user=who)
+        except PermissionError as e:
+            self._post(user=who)
+            raise llfuse.FUSEError(errno.EACCES)
 
 def _reload_principals():
     """

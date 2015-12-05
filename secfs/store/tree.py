@@ -73,3 +73,23 @@ def add(dir_i, name, i):
     #dr.inode.blocks = [new_dhash]
     new_ihash = secfs.store.block.store(dr.inode.bytes())
     return new_ihash
+
+def remove(dir_i, name):
+    """
+    Removes the entry with file 'name' from the directory
+    returns new ihash of truncated directory inode
+    """
+    if not isinstance(dir_i, I):
+        raise TypeError("{} is not an I, is a {}".format(dir_i, type(dir_i)))
+
+    dr = Directory(dir_i)
+    for i in range(len(dr.children)):
+        if dr.children[i][0] == name:
+            dr.children.pop(i)
+
+    # Don't call secfs.store.block directly, use inode builtins
+    dr.inode.write(dr.user_owner, dr.bytes())
+    new_ihash = secfs.store.block.store(dr.inode.bytes())
+    return new_ihash
+
+
