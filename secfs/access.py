@@ -13,6 +13,7 @@ def can_read(user, i):
     """
     Returns True if the given user can read the given i.
     """
+    print("->[INFO]: Calling can_read for user {} on {}".format(user, i))
     if not isinstance(user, User):
         raise TypeError("{} is not a User, is a {}".format(user, type(user)))
 

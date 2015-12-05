@@ -169,6 +169,7 @@ def read(read_as, i, off, size):
     if not isinstance(read_as, User):
         raise TypeError("{} is not a User, is a {}".format(read_as, type(read_as)))
 
+    print("->[INFO]: User {} trying to read {}".format(read_as, i))
     if not secfs.access.can_read(read_as, i):
         if i.p.is_group():
             raise PermissionError("cannot read from group-readable file {0} as {1}; user is not in group".format(i, read_as))

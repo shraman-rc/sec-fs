@@ -17,6 +17,7 @@ class Inode:
         self.encryption_keys = {}
 
     def encrypt(self, p, symkey):
+        print("->[INFO]: Encrypting inode as {}".format(p))
         self.encrypted = True
         allowed_users = []
 
@@ -28,6 +29,7 @@ class Inode:
             allowed_users = [p]
 
         # Perform PKE on per-user basis to avoid group indirection
+        print("->[INFO]: Allowed users: {}".format(allowed_users))
         for user in allowed_users:
             pubkey = secfs.fs.usermap[user]
             self.encryption_keys[user.id] = secfs.crypto.encrypt_asym(pubkey, symkey)
@@ -60,6 +62,7 @@ class Inode:
         """
         blocks = [secfs.store.block.load(b) for b in self.blocks]
         if self.encrypted:
+            print("->[INFO]: Decrypting as {}".format(read_as))
             if read_as == None:
                 raise Exception("read_as must be declared param for encrypted inodes")
             # Otherwise, decrypt the blocks

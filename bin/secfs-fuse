@@ -291,11 +291,15 @@ class SecFS(llfuse.Operations):
         self._pre(user)
 
         i = inodes[inode]
-        node = secfs.fs.get_inode(i)
-        if node.kind != 0:
-            raise llfuse.FUSEError(errno.ENOTDIR)
-
-        ret = new_fh(i, lastctx.uid)
+        if secfs.access.can_read(user, i):
+            node = secfs.fs.get_inode(i)
+            if node.kind != 0:
+                raise llfuse.FUSEError(errno.ENOTDIR)
+            ret = new_fh(i, lastctx.uid)
+        else:
+            self._post(user=user)
+            raise llfuse.FUSEError(errno.EACCES)
+        
         self._post(user=user)
         return ret
 
@@ -323,11 +327,16 @@ class SecFS(llfuse.Operations):
         self._pre(user)
 
         i = inodes[inode]
-        node = secfs.fs.get_inode(i)
-        if node.kind != 1:
-            raise llfuse.FUSEError(errno.EISDIR)
+        if secfs.access.can_read(user, i):
+            node = secfs.fs.get_inode(i)
+            if node.kind != 1:
+                raise llfuse.FUSEError(errno.EISDIR)
 
-        ret = new_fh(i, lastctx.uid)
+            ret = new_fh(i, lastctx.uid)
+        else:
+            self._post(user=user)
+            raise llfuse.FUSEError(errno.EACCES)
+
         self._post(user=user)
         return ret
 
