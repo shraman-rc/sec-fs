@@ -86,6 +86,7 @@ def remove(dir_i, name):
     for i in range(len(dr.children)):
         if dr.children[i][0] == name:
             dr.children.pop(i)
+            break
 
     # Don't call secfs.store.block directly, use inode builtins
     dr.inode.write(dr.user_owner, dr.bytes())
