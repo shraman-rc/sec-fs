@@ -567,6 +567,37 @@ class SecFS(llfuse.Operations):
         # Removing a directory is simply unlinking the "directory" file
         self.unlink(parent_inode, name)
 
+    def rename(self, parent_inode_old, name_old, parent_inode_new, name_new):
+        print("RENAME", parent_inode_old, name_old, parent_inode_new, name_new)
+
+        if parent_inode_old == parent_inode_new and name_old == name_new:
+            # Nothing to do here, boss
+            return
+ 
+        global lastctx
+        who = User(lastctx.uid)
+        self._pre(who)
+
+        parent_i_old = inodes[parent_inode_old]
+        parent_i_new = inodes[parent_inode_new]
+        i_old = secfs.store.tree.find_under(parent_i_old, name_old)
+        i_new = secfs.store.tree.find_under(parent_i_new, name_new)
+
+        # Remove the target file, we're overwriting it
+        # secfs.fs.unlink does some appropriate perms checks for us
+        if i_new != None:
+            secfs.fs.unlink(who, parent_i_new, name_new)
+
+        # Create the symbolic reference to the old inode in the new parent directory
+        secfs.fs.link(who, i_old, parent_i_new, name_new)
+
+        # Delete the old reference
+        new_ihash = secfs.store.tree.remove(parent_i_old, name_old)
+        secfs.tables.modmap(who, parent_i_old, new_ihash)
+
+        self._post(user=who)
+
+
 def _reload_principals():
     """
     Reloads the set of known principals by reading and parsing /.users and
