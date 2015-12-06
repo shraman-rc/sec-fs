@@ -583,10 +583,21 @@ class SecFS(llfuse.Operations):
         i_old = secfs.store.tree.find_under(parent_i_old, name_old)
         i_new = secfs.store.tree.find_under(parent_i_new, name_new)
 
+        # Make sure we are allowed to edit directories and files in question
+        if (not secfs.access.can_write(who, parent_i_old)) or \
+           (not secfs.access.can_write(who, parent_i_new)) or \
+           (not secfs.access.can_write(who, i_old)):
+               self._post(user=who)
+               raise llfuse.FUSEError(errno.EACCES)
+
         # Remove the target file, we're overwriting it
-        # secfs.fs.unlink does some appropriate perms checks for us
+        # secfs.fs.unlink performs the final check on i_new not perform above
         if i_new != None:
-            secfs.fs.unlink(who, parent_i_new, name_new)
+            try:
+                secfs.fs.unlink(who, parent_i_new, name_new)
+            except PermissionError as e:
+                self._post(user=who)
+                raise llfuse.FUSEError(errno.EACCES)
 
         # Create the symbolic reference to the old inode in the new parent directory
         secfs.fs.link(who, i_old, parent_i_new, name_new)
