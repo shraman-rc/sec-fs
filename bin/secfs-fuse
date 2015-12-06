@@ -563,6 +563,10 @@ class SecFS(llfuse.Operations):
             self._post(user=who)
             raise llfuse.FUSEError(errno.EACCES)
 
+    def rmdir(self, parent_inode, name):
+        # Removing a directory is simply unlinking the "directory" file
+        self.unlink(parent_inode, name)
+
 def _reload_principals():
     """
     Reloads the set of known principals by reading and parsing /.users and
