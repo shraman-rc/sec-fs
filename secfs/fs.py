@@ -304,28 +304,30 @@ def rotate_enc_key(p):
     else:
         users = [p]
 
-    print("ROTATING SECRET KEYS FOR:", [pr.id for pr in users])
-
+    # Rotate all affected users
     for u in users:
         rotate_user_enc_key(u)
 
 def rotate_user_enc_key(u):
-    print("CREATING NEW USER KEY")
+    """
+    Iterates through a user's itable and rotates all encrypted files, saving the
+    new secret key to disk.
+    """
     new_key = secfs.crypto.new_asym_key()
     # Get current itable for principal
     if u not in secfs.tables.current_itables:
         return
-    itable = secfs.tables.current_itables[u]
 
+    # Iterate through users itable
+    itable = secfs.tables.current_itables[u]
     for inum in itable.mapping:
         i = I(u, inum)
         node = get_inode(i)
 
+        # Rotate encrypted files
         if node.encrypted:
-            print("ROTATING FILE")
             node.rotate_key(u, new_key.public_key())
     
-    print("REGISTERING ENCRYPTION KEY")
     #Update and write new encryption key
     secfs.crypto.register_enc_key(u, new_key)
     

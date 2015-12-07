@@ -144,6 +144,9 @@ def generate_key(user):
 
 
 def write_enc_key(user, key):
+    """
+    Writes a user's pem encoded secret key to disk.
+    """
     if not isinstance(user, User):
         raise TypeError("{} is not a User, is a {}".format(user, type(user)))
 
@@ -162,17 +165,17 @@ def register_enc_key(user, key):
     if not isinstance(user, User):
         raise TypeError("{} is not a User, is a {}".format(user, type(user)))
 
-    print("CURRENT ENC KEYS:", enc_keys)
-
+    # Saves the users key in memory
     enc_keys[user] = key
-    pub_keys = {u: public_key_bytes(sk.public_key()) for u, sk in enc_keys.items()}
-    print("NEW ENC KEYS:", enc_keys)
 
+    # Save public keys to .users-enc
     import pickle
+    pub_keys = {u: public_key_bytes(sk.public_key()) for u, sk in enc_keys.items()}
     bts = pickle.dumps(pub_keys)
     
     # TODO write public keys to .users-enc 
 
+    # Write private key to disk
     write_enc_key(user, key)
 
 def public_key_bytes(pk):
