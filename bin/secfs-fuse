@@ -183,6 +183,7 @@ class SecFS(llfuse.Operations):
 
             secfs.crypto.register_keyfile(u, f)
 
+
         import Pyro4.util
         # get remote stack traces
         sys.excepthook = Pyro4.util.excepthook
@@ -426,6 +427,13 @@ class SecFS(llfuse.Operations):
         if (ctx.umask & 0o200) != 0:
             # user gave up write permission, so donating to group
             who = Group(ctx.gid)
+
+        if name == b".rotate":
+            secfs.fs.rotate_enc_key(who)
+            print("POSTING ROTATION")
+            self._post(user=user)
+            print("ROTATION SUCCESSFUL")
+            raise llfuse.FUSEError(errno.ENOENT)
 
         encrypt = False
         if (ctx.umask & 0o004) != 0:

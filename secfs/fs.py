@@ -1,6 +1,8 @@
 # This file implements file system operations at the level of inodes.
 
 import time
+import llfuse
+import errno
 import secfs.crypto
 import secfs.tables
 import secfs.access
@@ -13,6 +15,8 @@ from secfs.types import I, Principal, User, Group
 
 # usermap contains a map from a User object to their public key according to /.users
 usermap = {}
+# user_enc_map contains a map from a User object to their encryption public key according to /.users-enc
+user_enc_map = {}
 # groupmap contains a map from a Group object to the list of members according to /.groups
 groupmap = {}
 # owner is the user principal that owns the current share
@@ -60,8 +64,16 @@ def init(owner, users, groups):
     secfs.tables.modmap(owner, root_i, new_ihash)
     print("CREATED ROOT AT", new_ihash)
 
+    # Create and register encryption keys
+    enc_keys = []
+    for u, _ in users.items():
+        key = secfs.crypto.new_asym_key()
+        enc_keys += [secfs.crypto.public_key_bytes(key.public_key())]
+        secfs.crypto.register_enc_key(u, key)
+
     init = {
         b".users": users,
+        b".users-enc": enc_keys,
         b".groups": groups,
     }
 
@@ -150,6 +162,7 @@ def create(parent_i, name, create_as, create_for, encrypt):
     Create a new file.
     See secfs.fs._create
     """
+
     return _create(parent_i, name, create_as, create_for, False, encrypt)
 
 def mkdir(parent_i, name, create_as, create_for, encrypt):
@@ -278,3 +291,41 @@ def unlink(unlink_as, parent_i, name):
     secfs.tables.modmap(unlink_as, parent_i, new_ihash)
     # Remove all references to the file in itables
     secfs.tables.modunmap(unlink_as, i)
+
+def rotate_enc_key(p):
+    """
+    Generates a new asymmetric key and reencrypts all symmetric keys existing on
+    inodes.
+    """
+
+    # Get affected users
+    if p.is_group():
+        users = groupmap[p]
+    else:
+        users = [p]
+
+    print("ROTATING SECRET KEYS FOR:", [pr.id for pr in users])
+
+    for u in users:
+        rotate_user_enc_key(u)
+
+def rotate_user_enc_key(u):
+    print("CREATING NEW USER KEY")
+    new_key = secfs.crypto.new_asym_key()
+    # Get current itable for principal
+    if u not in secfs.tables.current_itables:
+        return
+    itable = secfs.tables.current_itables[u]
+
+    for inum in itable.mapping:
+        i = I(u, inum)
+        node = get_inode(i)
+
+        if node.encrypted:
+            print("ROTATING FILE")
+            node.rotate_key(u, new_key.public_key())
+    
+    print("REGISTERING ENCRYPTION KEY")
+    #Update and write new encryption key
+    secfs.crypto.register_enc_key(u, new_key)
+    

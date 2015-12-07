@@ -34,6 +34,10 @@ class Inode:
             pubkey = secfs.fs.usermap[user]
             self.encryption_keys[user.id] = secfs.crypto.encrypt_asym(pubkey, symkey)
 
+    def rotate_key(self, user, new_key):
+        sym_key = self.get_key(user) 
+        self.encryption_keys[user.id] = secfs.crypto.encrypt_asym(new_key, sym_key)
+
     def get_key(self, user):
         if not isinstance(user, User):
             raise TypeError("{} cannot retrieve an encrypted key \

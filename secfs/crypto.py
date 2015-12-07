@@ -10,10 +10,11 @@ from cryptography.exceptions import InvalidSignature
 from secfs.types import I, Principal, User, Group
 
 keys = {}
+enc_keys = {}
 
 def register_keyfile(user, f):
     """
-    Register the private key for the given user for use in signing/decrypting.
+    Register the private key for the given user for use in signing.
     """
     if not isinstance(user, User):
         raise TypeError("{} is not a User, is a {}".format(user, type(user)))
@@ -103,6 +104,13 @@ def verify(sig, public_key, data):
   
   return True
 
+def new_asym_key():
+    return rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+
 def generate_key(user):
     """
     Ensure that a private/public keypair exists in user-$uid-key.pem for the
@@ -112,25 +120,13 @@ def generate_key(user):
     if not isinstance(user, User):
         raise TypeError("{} is not a User, is a {}".format(user, type(user)))
 
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.backends import default_backend
-
     f = "user-{}-key.pem".format(user.id)
 
     import os.path
     if not os.path.isfile(f):
-        private_key = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=2048,
-            backend=default_backend()
-        )
+        private_key = new_asym_key()
 
-        pem = private_key.private_bytes(
-           encoding=serialization.Encoding.PEM,
-           format=serialization.PrivateFormat.TraditionalOpenSSL,
-           encryption_algorithm=serialization.NoEncryption()
-        )
+        pem = pem_encode(private_key)
 
         with open(f, "wb") as key_file:
             key_file.write(pem)
@@ -143,8 +139,57 @@ def generate_key(user):
                 password=None,
                 backend=default_backend()
             ).public_key()
+    
+    return public_key_bytes(public_key)
 
-    return public_key.public_bytes(
+
+def write_enc_key(user, key):
+    if not isinstance(user, User):
+        raise TypeError("{} is not a User, is a {}".format(user, type(user)))
+
+    f = "user-{}-enc-key.pem".format(user.id)
+
+    pem = pem_encode(key)
+
+    with open(f, "wb") as key_file:
+        key_file.write(pem)
+
+def register_enc_key(user, key):
+    """
+    Register the encryption private key for the given user in enc_keys and
+    writes key to dis.
+    """
+    if not isinstance(user, User):
+        raise TypeError("{} is not a User, is a {}".format(user, type(user)))
+
+    print("CURRENT ENC KEYS:", enc_keys)
+
+    enc_keys[user] = key
+    pub_keys = {u: public_key_bytes(sk.public_key()) for u, sk in enc_keys.items()}
+    print("NEW ENC KEYS:", enc_keys)
+
+    import pickle
+    bts = pickle.dumps(pub_keys)
+    
+    # TODO write public keys to .users-enc 
+
+    write_enc_key(user, key)
+
+def public_key_bytes(pk):
+    """
+    Returns the pem encoded bytes for the given public key.
+    """
+    return pk.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+
+def pem_encode(key):
+    """
+    Returns the pem encoded secret key.
+    """
+    return key.private_bytes(
        encoding=serialization.Encoding.PEM,
-       format=serialization.PublicFormat.SubjectPublicKeyInfo
+       format=serialization.PrivateFormat.TraditionalOpenSSL,
+       encryption_algorithm=serialization.NoEncryption()
     )

@@ -37,8 +37,8 @@ def get_groups(user):
     return groups
 
 def upload_vsl():
-    print("->[INFO]: Uploading VSL:\n\t{}".format( "\n\t".join([print_vs(vs) for vs in current_vsl]) ))
     global server, current_vsl
+    print("->[INFO]: Uploading VSL:\n\t{}".format( "\n\t".join([print_vs(vs) for vs in current_vsl]) ))
     serialized_vsl = pickle.dumps(current_vsl)
     server.upload_vsl(serialized_vsl)
 
