@@ -34,3 +34,8 @@ def load(chash, sym_key=None):
         blob = secfs.crypto.decrypt_sym(sym_key, blob)
 
     return blob
+
+def remove(chashes):
+    global server
+    for chash in chashes:
+        server.remove(chash)

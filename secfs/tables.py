@@ -19,6 +19,8 @@ current_vsl = []
 # current_itables represents the current snapshot of the file system
 #   - maps Principal instances -> itables
 current_itables = {}
+# For garbage collection
+garbage_ihashes = set()
 
 # a server connection handle is passed to us at mount time by secfs-fuse
 server = None
@@ -212,6 +214,12 @@ def post(push_vs, user):
     new_vsl.append(new_vs)
     current_vsl = new_vsl
     upload_vsl()
+
+    # Issue garbage collection routine
+    global garbage_ihashes
+    secfs.store.block.remove(garbage_ihashes)
+    garbage_ihashes = set()
+
     print("->[INFO]: User {} exiting post().\n".format(user))
 
 class Itable:
@@ -313,7 +321,10 @@ def modunmap(mod_as, i):
     user_t = current_itables[i.p]
     if i.n not in user_t.mapping:
         raise IndexError("(Unmapping) invalid inumber {} for user itable {}".format(i.n, user_t))
-    # modify the entry, and store back the updated itable
+    # Flag the ihash to be garbage collected
+    global garbage_ihashes
+    garbage_ihashes.add(user_t.mapping[i.n])
+    # Delete the reference from the itable
     del user_t.mapping[i.n]
     current_itables[i.p] = user_t
 

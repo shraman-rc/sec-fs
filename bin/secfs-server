@@ -66,6 +66,10 @@ class SecFSRPC():
         self.blocks[chash] = blob
         return chash
 
+    def remove(self, chash):
+        if chash in self.blocks:
+            del self.blocks[chash]
+
 
 import sys
 if len(sys.argv) != 2:
