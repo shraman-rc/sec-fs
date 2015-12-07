@@ -26,6 +26,24 @@ def register_keyfile(user, f):
             backend=default_backend()
         )
 
+_foo = b"deadbeef"
+def get_privhash(user):
+    """
+    Return an unecoded serialized version of user's private key
+    """
+    import hashlib
+    # We don't directly hash the private key in case this library is buggy
+    # (we don't want a possibly reversible hash to reveal secret key)
+    # So we instead sign a dummy message _foo and generate its hash
+    return hashlib.sha224(
+        keys[user].private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+    ).hexdigest()
+    # return hashlib.sha224(sign(keys[user], _foo)).hexdigest()
+
 def decrypt_sym(key, data):
     """
     Decrypt the given data with the given key.

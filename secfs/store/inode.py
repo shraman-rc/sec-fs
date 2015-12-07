@@ -5,6 +5,7 @@ import secfs.fs
 from secfs.types import I, Principal, User, Group
 
 class Inode:
+
     def __init__(self):
         self.size = 0
         self.kind = 0 # 0 is dir, 1 is file
@@ -13,8 +14,11 @@ class Inode:
         self.mtime = 0
         self.blocks = []
         self.encrypted = False
-        # Maps *uid* (not User objects) to ciphered sym key
-        self.encryption_keys = {}
+        # Encryption keys holds tuples called "keypairs" in the form
+        #   ( private key hash , encrypted secret key )
+        # We use a secure hash library that implements non-reversible hashes
+        # so we are not in danger of revealing our secret keys
+        self.encryption_keys = []
 
     def encrypt(self, p, symkey):
         print("->[INFO]: Encrypting inode as {}".format(p))
@@ -30,19 +34,28 @@ class Inode:
 
         # Perform PKE on per-user basis to avoid group indirection
         print("->[INFO]: Allowed users: {}".format(allowed_users))
+        import hashlib
         for user in allowed_users:
             pubkey = secfs.fs.usermap[user]
-            self.encryption_keys[user.id] = secfs.crypto.encrypt_asym(pubkey, symkey)
+            private_key_hash = secfs.crypto.get_privhash(user)
+            keypair = (private_key_hash, secfs.crypto.encrypt_asym(pubkey, symkey))
+            self.encryption_keys.append(keypair)
 
     def get_key(self, user):
         if not isinstance(user, User):
             raise TypeError("{} cannot retrieve an encrypted key \
                 because it is not a user".format(user))
-        # Get the RSA encrypted symmetric key particular to this user
-        encrypted_key = self.encryption_keys[user.id]
-        # Use private key decryption to retrieve original sym key
         private_key = secfs.crypto.keys[user]
-        return secfs.crypto.decrypt_asym(private_key, encrypted_key) 
+        # Get the RSA encrypted symmetric key particular to this user
+        import hashlib
+        for keypair in self.encryption_keys:
+            priv_key_hash, encrypted_key = keypair
+            # Check this user's private key hash against the other's
+            my_priv_key_hash = secfs.crypto.get_privhash(user)
+            if my_priv_key_hash == priv_key_hash:
+                # Use private key decryption to retrieve original sym key
+                return secfs.crypto.decrypt_asym(private_key, encrypted_key)
+        raise Exception("(in get_key): User not found among private keys")
 
     def load(ihash):
         """
