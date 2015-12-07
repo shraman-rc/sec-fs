@@ -55,7 +55,6 @@ class Inode:
             if my_priv_key_hash == priv_key_hash:
                 # Use private key decryption to retrieve original sym key
                 return secfs.crypto.decrypt_asym(private_key, encrypted_key)
-        raise Exception("(in get_key): User not found among private keys")
 
     def load(ihash):
         """
